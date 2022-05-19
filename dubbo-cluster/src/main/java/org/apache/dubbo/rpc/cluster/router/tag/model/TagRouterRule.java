@@ -43,8 +43,8 @@ import static org.apache.dubbo.rpc.cluster.Constants.TAGS_KEY;
  * ...
  */
 public class TagRouterRule extends AbstractRouterRule {
-    private List<Tag> tags;
 
+    private List<Tag> tags;
     private final Map<String, List<String>> addressToTagnames = new HashMap<>();
     private final Map<String, List<String>> tagnameToAddresses = new HashMap<>();
 

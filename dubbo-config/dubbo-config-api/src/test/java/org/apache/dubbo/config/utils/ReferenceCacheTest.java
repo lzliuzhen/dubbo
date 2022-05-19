@@ -21,12 +21,10 @@ import org.apache.dubbo.config.ApplicationConfig;
 import org.apache.dubbo.config.RegistryConfig;
 import org.apache.dubbo.config.bootstrap.DubboBootstrap;
 import org.apache.dubbo.config.utils.service.FooService;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ReferenceCacheTest {
@@ -43,18 +41,16 @@ public class ReferenceCacheTest {
         ReferenceCache cache = SimpleReferenceCache.getCache();
         MockReferenceConfig config = buildMockReferenceConfig("org.apache.dubbo.config.utils.service.FooService", "group1", "1.0.0");
         assertEquals(0L, config.getCounter());
-        Object proxy = cache.get(config);
+        cache.get(config);
         assertTrue(config.isGetMethodRun());
 
-        // singleton reference config by default
         MockReferenceConfig configCopy = buildMockReferenceConfig("org.apache.dubbo.config.utils.service.FooService", "group1", "1.0.0");
         assertEquals(1L, configCopy.getCounter());
-        Object proxyOfCopyConfig = cache.get(configCopy);
-        assertFalse(configCopy.isGetMethodRun());
+        cache.get(configCopy);
+        assertTrue(configCopy.isGetMethodRun());
 
-        assertEquals(1L, config.getCounter());
-        assertEquals(1L, configCopy.getCounter());
-        assertEquals(proxy, proxyOfCopyConfig);
+        assertEquals(2L, config.getCounter());
+        assertEquals(2L, configCopy.getCounter());
     }
 
     @Test

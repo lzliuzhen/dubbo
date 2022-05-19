@@ -17,12 +17,6 @@
 
 package org.apache.dubbo.config;
 
-import static org.apache.dubbo.common.constants.QosConstants.ACCEPT_FOREIGN_IP_COMPATIBLE;
-import static org.apache.dubbo.common.constants.QosConstants.QOS_ENABLE_COMPATIBLE;
-import static org.apache.dubbo.common.constants.QosConstants.QOS_HOST_COMPATIBLE;
-import static org.apache.dubbo.common.constants.QosConstants.QOS_PORT_COMPATIBLE;
-import static org.apache.dubbo.common.constants.RegistryConstants.REGISTRY_TYPE_KEY;
-
 /**
  *
  */
@@ -139,8 +133,7 @@ public interface Constants {
 
     String MULTI_SERIALIZATION_KEY = "serialize.multiple";
 
-    String[] DOT_COMPATIBLE_KEYS = new String[]{QOS_ENABLE_COMPATIBLE, QOS_HOST_COMPATIBLE, QOS_PORT_COMPATIBLE,
-        ACCEPT_FOREIGN_IP_COMPATIBLE, REGISTRY_TYPE_KEY};
+    String[] DOT_COMPATIBLE_KEYS = new String[]{"qos-enable", "qos-port", "qos-accept-foreign-ip"};
 
     String IGNORE_CHECK_KEYS = "ignoreCheckKeys";
 

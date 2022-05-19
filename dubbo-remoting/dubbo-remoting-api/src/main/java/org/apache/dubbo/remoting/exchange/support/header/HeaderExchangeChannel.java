@@ -125,13 +125,31 @@ final class HeaderExchangeChannel implements ExchangeChannel {
         if (closed) {
             throw new RemotingException(this.getLocalAddress(), null, "Failed to send request " + request + ", cause: The channel " + this + " is closed!");
         }
+
+        // 在咱们的consumer这一端，最终发送请求的时候，会在这里来执行
+        // 构建一个Request，步骤不要小看他，很关键的，RpcInvocation对象封装为Request对象
+        // 把我们的一个业务语义的对象，封装为了网络通信里的请求/响应模型里的Request
+        // 从这一步开始，开始引入了网络通信的概念
+        // Request这个概念的引入开始的，对这些设计思想会觉得有一些感觉自己有点抓不住，虚
+        // 架构师多年经验设计出来的，各种层设计，各种概念的设计，抽象
+
+        // RpcInvocation直接交给你的netty框架去进行处理
+        // 这样子就不太符合我们的网络通信这块的请求/响应的模型了
+        // 同步转异步的过程，直接返回了一个future，如果你要同步等待响应，可以调用future.get阻塞住
+
         // create request.
         Request req = new Request();
         req.setVersion(Version.getProtocolVersion());
-        req.setTwoWay(true);
-        req.setData(request);
+        req.setTwoWay(true);  // 双向请求，请求过去了，你还得给我对应的响应
+        req.setData(request); // 这个request就是我们的rpc invocation
+        // 创建了一个future之后，明显是扔出去给调用方后续在收到响应结果之后，再来进行处理的
+        // 就是我们返回的异步future结果，是跟我们发送请求居然是脱离开来的，这个实在是台有意思了
+        // netty client、request、timeout、线程池executor，封装了一个future
         DefaultFuture future = DefaultFuture.newFuture(channel, req, timeout, executor);
+        // 正常情况下，一般来说都不会有超时的问题
         try {
+            // channel.send，到底有没有可能说会直接发起同步的IO调用
+            // netty client.send，netty channel -> channel，发起了请求，同步发起请求，但是不等待请求完全完成，就直接返回了
             channel.send(req);
         } catch (RemotingException e) {
             future.cancel();

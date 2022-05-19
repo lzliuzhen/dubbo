@@ -18,7 +18,6 @@ package org.apache.dubbo.config.spring.issues.issue6000.dubbo;
 
 import org.apache.dubbo.config.annotation.Reference;
 import org.apache.dubbo.config.spring.api.HelloService;
-
 import org.springframework.context.annotation.Configuration;
 
 /**

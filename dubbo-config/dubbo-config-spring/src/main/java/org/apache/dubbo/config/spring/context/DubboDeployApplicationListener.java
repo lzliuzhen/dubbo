@@ -16,9 +16,6 @@
  */
 package org.apache.dubbo.config.spring.context;
 
-import static org.springframework.util.ObjectUtils.nullSafeEquals;
-
-import java.util.concurrent.Future;
 import org.apache.dubbo.common.deploy.DeployListenerAdapter;
 import org.apache.dubbo.common.deploy.DeployState;
 import org.apache.dubbo.common.deploy.ModuleDeployer;
@@ -38,6 +35,8 @@ import org.springframework.context.event.ApplicationContextEvent;
 import org.springframework.context.event.ContextClosedEvent;
 import org.springframework.context.event.ContextRefreshedEvent;
 import org.springframework.core.Ordered;
+
+import java.util.concurrent.Future;
 
 /**
  * An ApplicationListener to control Dubbo application.
@@ -95,12 +94,10 @@ public class DubboDeployApplicationListener implements ApplicationListener<Appli
 
     @Override
     public void onApplicationEvent(ApplicationContextEvent event) {
-        if (nullSafeEquals(applicationContext, event.getSource())) {
-            if (event instanceof ContextRefreshedEvent) {
-                onContextRefreshedEvent((ContextRefreshedEvent) event);
-            } else if (event instanceof ContextClosedEvent) {
-                onContextClosedEvent((ContextClosedEvent) event);
-            }
+        if (event instanceof ContextRefreshedEvent) {
+            onContextRefreshedEvent((ContextRefreshedEvent) event);
+        } else if (event instanceof ContextClosedEvent) {
+            onContextClosedEvent((ContextClosedEvent) event);
         }
     }
 
@@ -132,8 +129,6 @@ public class DubboDeployApplicationListener implements ApplicationListener<Appli
         } catch (Exception e) {
             logger.error("An error occurred when stop dubbo module: " + e.getMessage(), e);
         }
-        // remove context bind cache
-        DubboSpringInitializer.remove(event.getApplicationContext());
     }
 
     @Override

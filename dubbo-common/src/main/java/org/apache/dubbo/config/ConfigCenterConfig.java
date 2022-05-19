@@ -22,7 +22,6 @@ import org.apache.dubbo.common.utils.CollectionUtils;
 import org.apache.dubbo.common.utils.StringUtils;
 import org.apache.dubbo.common.utils.UrlUtils;
 import org.apache.dubbo.config.support.Parameter;
-import org.apache.dubbo.rpc.model.ApplicationModel;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -70,7 +69,7 @@ public class ConfigCenterConfig extends AbstractConfig {
     private String password;
 
     /**
-     * The default value is 30000L;
+     * The default value is 3000L;
      */
     private Long timeout;
 
@@ -115,10 +114,6 @@ public class ConfigCenterConfig extends AbstractConfig {
     public ConfigCenterConfig() {
     }
 
-    public ConfigCenterConfig(ApplicationModel applicationModel) {
-        super(applicationModel);
-    }
-
     @Override
     protected void checkDefault() {
         super.checkDefault();
@@ -130,8 +125,11 @@ public class ConfigCenterConfig extends AbstractConfig {
             group = CommonConstants.DUBBO;
         }
         if (timeout == null) {
-            timeout = 30000L;
+            timeout = 3000L;
         }
+//        if (highestPriority == null) {
+//            highestPriority = true;
+//        }
         if (check == null) {
             check = true;
         }
@@ -146,7 +144,7 @@ public class ConfigCenterConfig extends AbstractConfig {
         if (StringUtils.isEmpty(address)) {
             address = ANYHOST_VALUE;
         }
-        map.put(PATH_KEY, ConfigCenterConfig.class.getName());
+        map.put(PATH_KEY, ConfigCenterConfig.class.getSimpleName());
         // use 'zookeeper' as the default config center.
         if (StringUtils.isEmpty(map.get(PROTOCOL_KEY))) {
             map.put(PROTOCOL_KEY, ZOOKEEPER_PROTOCOL);
@@ -156,10 +154,6 @@ public class ConfigCenterConfig extends AbstractConfig {
 
     public boolean checkOrUpdateInitialized(boolean update) {
         return initialized.compareAndSet(false, update);
-    }
-
-    public void setInitialized(boolean val) {
-        initialized.set(val);
     }
 
     public Map<String, String> getExternalConfiguration() {

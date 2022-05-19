@@ -130,7 +130,7 @@ public class URLAddress implements Serializable {
 
     @Override
     public int hashCode() {
-        return host.hashCode() * 31 + port;
+        return Objects.hash(host, port);
     }
 
     @Override

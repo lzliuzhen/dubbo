@@ -21,7 +21,7 @@ import org.apache.dubbo.common.config.ConfigurationUtils;
 import org.apache.dubbo.common.config.configcenter.DynamicConfiguration;
 import org.apache.dubbo.common.logger.Logger;
 import org.apache.dubbo.common.logger.LoggerFactory;
-import org.apache.dubbo.common.threadpool.manager.FrameworkExecutorRepository;
+import org.apache.dubbo.common.threadpool.manager.ExecutorRepository;
 import org.apache.dubbo.common.timer.HashedWheelTimer;
 import org.apache.dubbo.common.url.component.ServiceConfigURL;
 import org.apache.dubbo.common.utils.CollectionUtils;
@@ -71,7 +71,7 @@ import java.util.concurrent.TimeUnit;
 import static org.apache.dubbo.common.constants.CommonConstants.APPLICATION_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.CLUSTER_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.COMMA_SPLIT_PATTERN;
-import static org.apache.dubbo.common.constants.CommonConstants.CONSUMER;
+import static org.apache.dubbo.common.constants.CommonConstants.DUBBO;
 import static org.apache.dubbo.common.constants.CommonConstants.DUBBO_VERSION_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.ENABLED_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.EXTRA_KEYS_KEY;
@@ -85,7 +85,6 @@ import static org.apache.dubbo.common.constants.CommonConstants.PATH_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.PROTOCOL_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.REGISTRY_PROTOCOL_LISTENER_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.RELEASE_KEY;
-import static org.apache.dubbo.common.constants.CommonConstants.SIDE_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.TIMEOUT_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.VERSION_KEY;
 import static org.apache.dubbo.common.constants.FilterConstants.VALIDATION_KEY;
@@ -100,7 +99,6 @@ import static org.apache.dubbo.common.constants.RegistryConstants.DYNAMIC_KEY;
 import static org.apache.dubbo.common.constants.RegistryConstants.OVERRIDE_PROTOCOL;
 import static org.apache.dubbo.common.constants.RegistryConstants.REGISTRY_KEY;
 import static org.apache.dubbo.common.constants.RegistryConstants.SERVICE_REGISTRY_PROTOCOL;
-import static org.apache.dubbo.common.utils.StringUtils.isEmpty;
 import static org.apache.dubbo.common.utils.UrlUtils.classifyUrls;
 import static org.apache.dubbo.registry.Constants.CONFIGURATORS_SUFFIX;
 import static org.apache.dubbo.registry.Constants.DEFAULT_REGISTRY_RETRY_PERIOD;
@@ -136,7 +134,7 @@ public class RegistryProtocol implements Protocol, ScopeModelAware {
     public static final String[] DEFAULT_REGISTER_PROVIDER_KEYS = {
         APPLICATION_KEY, CODEC_KEY, EXCHANGER_KEY, SERIALIZATION_KEY, CLUSTER_KEY, CONNECTIONS_KEY, DEPRECATED_KEY,
         GROUP_KEY, LOADBALANCE_KEY, MOCK_KEY, PATH_KEY, TIMEOUT_KEY, TOKEN_KEY, VERSION_KEY, WARMUP_KEY,
-        WEIGHT_KEY, DUBBO_VERSION_KEY, RELEASE_KEY, SIDE_KEY
+        WEIGHT_KEY, DUBBO_VERSION_KEY, RELEASE_KEY
     };
 
     public static final String[] DEFAULT_REGISTER_CONSUMER_KEYS = {
@@ -176,6 +174,9 @@ public class RegistryProtocol implements Protocol, ScopeModelAware {
         this.frameworkModel = frameworkModel;
     }
 
+    // SPI机制里本身就会有一个依赖注入的过程
+    // setter
+    // 有了这个setter方法之后，就会在SPI机制里就会发现这个setter方法，去执行依赖注入
     public void setProtocol(Protocol protocol) {
         this.protocol = protocol;
     }
@@ -221,6 +222,7 @@ public class RegistryProtocol implements Protocol, ScopeModelAware {
 
     @Override
     public <T> Exporter<T> export(final Invoker<T> originInvoker) throws RpcException {
+        // 这一大坨东西一般来说看源码可以不用太过于关注
         URL registryUrl = getRegistryUrl(originInvoker);
         // url to export locally
         URL providerUrl = getProviderUrl(originInvoker);
@@ -235,15 +237,19 @@ public class RegistryProtocol implements Protocol, ScopeModelAware {
         overrideListeners.put(registryUrl, overrideSubscribeListener);
 
         providerUrl = overrideUrlWithConfig(providerUrl, overrideSubscribeListener);
+
         //export invoker
+        // 会涉及到对另外一个protocol组件的调用
         final ExporterChangeableWrapper<T> exporter = doLocalExport(originInvoker, providerUrl);
 
-        // url to registry
+        // url to registry 完成服务注册的事情
+        // 直接基于你的注册中心的url地址，去构建对应的注册中心组件，默认是基于zk来做的
+        // 构建一个基于zk的注册中心组件，同时跟zk完成连接的建立，curator5一个框架来做的事情
         final Registry registry = getRegistry(registryUrl);
         final URL registeredProviderUrl = getUrlToRegistry(providerUrl, registryUrl);
 
-        // decide if we need to delay publish (provider itself and registry should both need to register)
-        boolean register = providerUrl.getParameter(REGISTER_KEY, true) && registryUrl.getParameter(REGISTER_KEY, true);
+        // decide if we need to delay publish
+        boolean register = providerUrl.getParameter(REGISTER_KEY, true);
         if (register) {
             register(registry, registeredProviderUrl);
         }
@@ -255,10 +261,8 @@ public class RegistryProtocol implements Protocol, ScopeModelAware {
         exporter.setRegisterUrl(registeredProviderUrl);
         exporter.setSubscribeUrl(overrideSubscribeUrl);
 
-        if (!registry.isServiceDiscovery()) {
-            // Deprecated! Subscribe to override rules in 2.6.x or before.
-            registry.subscribe(overrideSubscribeUrl, overrideSubscribeListener);
-        }
+        // Deprecated! Subscribe to override rules in 2.6.x or before.
+        registry.subscribe(overrideSubscribeUrl, overrideSubscribeListener);
 
         notifyExport(exporter);
         //Ensure that a new exporter instance is returned every time export
@@ -389,6 +393,7 @@ public class RegistryProtocol implements Protocol, ScopeModelAware {
      * @return
      */
     protected Registry getRegistry(final URL registryUrl) {
+        // 又是通过SPI机制，去自适应拿到对应的extension实例
         RegistryFactory registryFactory = ScopeModelUtil.getExtensionLoader(RegistryFactory.class, registryUrl.getScopeModel()).getAdaptiveExtension();
         return registryFactory.getRegistry(registryUrl);
     }
@@ -468,6 +473,8 @@ public class RegistryProtocol implements Protocol, ScopeModelAware {
     @Override
     @SuppressWarnings("unchecked")
     public <T> Invoker<T> refer(Class<T> type, URL url) throws RpcException {
+        // 会根据你的url，获取到你的ZooKeeperRegistry，注册中心的获取是必须得有的
+        // 源码编写的角度来分析一下，刚刚在这里的时候，是没问题的，registry注册中心的构建是ok的
         url = getRegistryUrl(url);
         Registry registry = getRegistry(url);
         if (RegistryService.class.equals(type)) {
@@ -475,34 +482,84 @@ public class RegistryProtocol implements Protocol, ScopeModelAware {
         }
 
         // group="a,b" or group="*"
+        // 一看不是那么的太关键，就可以先忽略掉不要看了
         Map<String, String> qs = (Map<String, String>) url.getAttribute(REFER_KEY);
         String group = qs.get(GROUP_KEY);
-        if (StringUtils.isNotEmpty(group)) {
+        if (group != null && group.length() > 0) {
             if ((COMMA_SPLIT_PATTERN.split(group)).length > 1 || "*".equals(group)) {
                 return doRefer(Cluster.getCluster(url.getScopeModel(), MergeableCluster.NAME), registry, type, url, qs);
             }
         }
 
+        // 获取到一个cluster，cluster是非常关键的一个跟集群容错策略是有关联的
+        // 不同的cluster -> cluster invoker -> 就有不同的调用失败时候的集群容错的策略和算法
+        // FailoverCluster
+        // 集群容错策略的获取是ok的，都是基于SPI机制来获取的
+        // MockClusterWrapper -> FailoverCluster
         Cluster cluster = Cluster.getCluster(url.getScopeModel(), qs.get(CLUSTER_KEY));
+
+        // doRefer，这个代码的编写技巧是很多人很多框架、系统都会使用的
+        // refer -> 先做一些提前的准备工作 -> 正式的工作可以在方法名称的前面加一个doRefer -> 执行真正的工作
         return doRefer(cluster, registry, type, url, qs);
     }
 
+    // 在这边应该是会把组装好的invoker体系里的最源头的一个invoker
+    // 应该是返回回去，下一步就是去创建接口的动态代理，把你的invoker放进去，动态代理的方法被调用的时候
+    // 就可以直接走你的invoker就可以了，invoker体系负责完成一个完整的rpc调用过程
     protected <T> Invoker<T> doRefer(Cluster cluster, Registry registry, Class<T> type, URL url, Map<String, String> parameters) {
+        // 代码里的前置处理
         Map<String, Object> consumerAttribute = new HashMap<>(url.getAttributes());
         consumerAttribute.remove(REFER_KEY);
-        String p = isEmpty(parameters.get(PROTOCOL_KEY)) ? CONSUMER : parameters.get(PROTOCOL_KEY);
-        URL consumerUrl = new ServiceConfigURL (
-            p,
+        URL consumerUrl = new ServiceConfigURL(parameters.get(PROTOCOL_KEY) == null ? DUBBO : parameters.get(PROTOCOL_KEY),
             null,
             null,
             parameters.get(REGISTER_IP_KEY),
             0, getPath(parameters, type),
             parameters,
-            consumerAttribute
-        );
+            consumerAttribute);
         url = url.putAttribute(CONSUMER_URL_KEY, consumerUrl);
+
+
+        // 在这里，以migration invoker作为一个起点，去构建了一个invoker链条
+        // 经典的责任链模式的使用
+        // 就是一环扣一环，先执行一个步骤，接着是下一个步骤，再然后是下一个步骤，一个一个步骤的去执行
+        // 把rpc调用的过程，给他都执行完毕
+
+        // 代码层面，不是说是严格的责任链模式落地下去来开发的
+        // 用到的都是思想，责任链思想
+        // 他在这里把不同的步骤和环节，拆分成了不同的invoker，就可以把每个环节的代码逻辑内聚在单个invoker内部
+        // 再通过他这里的一系列的代码逻辑，就可以把不同的环节的invoker串联在一起，一个一个的按照顺序去串联
+        // 真正执行的时候，以migration invoker作为一个起点，他会一个一个的执行下一个invoker
+        // filter链条也算是一个环节
+
+        // 设计模式，到底应该怎么用，你只要大概知道有哪些模式就可以了，真正我们在写代码的时候，都是不会生搬硬套的
+        // 一般来说都是吸收设计模式的思想，把思想落地运用再代码里就可以了
+        // 面试什么，面试官去聊dubbo这一块的设计，他直接运用了责任链模式，这是不对的，运用了责任链模式的思想
+        // invoker体系的串联
+
+        // 我们可以理解为初步的开始构建invoker体系链条，把源头invoker给他先准备好
         ClusterInvoker<T> migrationInvoker = getMigrationInvoker(this, cluster, registry, type, url, consumerUrl);
-        return interceptInvoker(migrationInvoker, url, consumerUrl);
+
+        // 到此为止，必然下一步，必须要去继续去给他组装后续的invoker
+        // 应该继续去构建后续的invoker，把后续构建好的invoker，设置给我们的上层invoker
+        // 首先方法语义，我觉得就不太清晰，有点含糊，对invoker进行拦截，intercept拦截invoker，一般来说
+        // 他都是去对invoker做一些处理
+
+        // 在这个地方，其实RegistryProtocol，他是有责任在这里把invoker链条组装好
+        // invoker链条就代表了rpc调用链路的全过程，每个步骤就代表了一个环节
+        // rpc调用过程里包含了：migration（主要是有两个源头invoker可以互相进行切换）、mock降级、filter链条、集群容错cluster、负载均衡、dubbo invoker
+        // 就应该针对每个环节都去进行对应的invoker的构建，构建好每个环节的invoker，然后把那个invoker注入给上层的invoker
+
+        // MockClusterInvoker mockClusterInvoker = getMockClusterInvoker(xx, xx, xx);
+        // migrationInvoker.setInvoker(mockClusterInvoker);
+
+        // ClusterFilterChain filterChain = buildFilterChain(xx, xx, xx);
+        // mockClusterInvoker.setInvoker(filterChain);
+
+        // CLusterInvoker failoverClusterInvoker = getClusterInvoker(xx, xx, xx);
+        // filterCHain.addLast(failoverClusterInvoker);
+
+        return interceptInvoker(migrationInvoker, url, consumerUrl, url);
     }
 
     private String getPath(Map<String, String> parameters, Class<?> type) {
@@ -510,6 +567,9 @@ public class RegistryProtocol implements Protocol, ScopeModelAware {
     }
 
     protected <T> ClusterInvoker<T> getMigrationInvoker(RegistryProtocol registryProtocol, Cluster cluster, Registry registry, Class<T> type, URL url, URL consumerUrl) {
+        // 基于服务发现机制的迁移invoker
+        // new，构建出这样的一个migration invoker对象来
+        // 代码一直到这里，都还算是漂亮的，逻辑步骤还是很清晰的
         return new ServiceDiscoveryMigrationInvoker<T>(registryProtocol, cluster, registry, type, url, consumerUrl);
     }
 
@@ -522,22 +582,36 @@ public class RegistryProtocol implements Protocol, ScopeModelAware {
      * @param invoker     MigrationInvoker that determines which type of invoker list to use
      * @param url         The original url generated during refer, more like a registry:// style url
      * @param consumerUrl Consumer url representing current interface and its config
+     * @param registryURL The actual registry url, zookeeper:// for example
      * @param <T>         The service definition
      * @return The @param MigrationInvoker passed in
      */
-    protected <T> Invoker<T> interceptInvoker(ClusterInvoker<T> invoker, URL url, URL consumerUrl) {
+    protected <T> Invoker<T> interceptInvoker(ClusterInvoker<T> invoker, URL url, URL consumerUrl, URL registryURL) {
+        // RegistryProtocol里的监听回调器
         List<RegistryProtocolListener> listeners = findRegistryProtocolListeners(url);
         if (CollectionUtils.isEmpty(listeners)) {
             return invoker;
         }
 
+        // 思考一下，站在当时的作者的角度来思考一下，为什么这里要用一个listener，SPI机制里获取过来的
+        // SPI机制，就是希望能够有一个动态扩展的口子留再这里，如果说我们自己去实现了一个RegistryProtcolListener
+        // 给他加上activate自动激活，就会在这里被加载出来一起来执行
+
+        // 对监听回调器进行一个回调
+        // 往往在一些主业务逻辑里，你要是做一些监听回调机制的话，其实是很尴尬的
+        // 往往会导致你的逻辑的不清晰
         for (RegistryProtocolListener listener : listeners) {
-            listener.onRefer(this, invoker, consumerUrl, url);
+            listener.onRefer(this, invoker, consumerUrl, registryURL);
         }
+
+        // 从语义上来说，引入这样的一种组件
+        // InvokerChainBuilder -> 我们可以有多个InvokerChainBuilder -> 一个一个builder来负责如何去进行invoker链条的构建
+
         return invoker;
     }
 
     public <T> ClusterInvoker<T> getServiceDiscoveryInvoker(Cluster cluster, Registry registry, Class<T> type, URL url) {
+        // 他的改变在哪里，之前搞出来的那个invoker，他对应的directory，registry directory
         DynamicDirectory<T> directory = new ServiceDiscoveryRegistryDirectory<>(type, url);
         return doCreateInvoker(directory, cluster, registry, type);
     }
@@ -551,24 +625,30 @@ public class RegistryProtocol implements Protocol, ScopeModelAware {
     protected <T> ClusterInvoker<T> doCreateInvoker(DynamicDirectory<T> directory, Cluster cluster, Registry registry, Class<T> type) {
         directory.setRegistry(registry);
         directory.setProtocol(protocol);
+
         // all attributes of REFER_KEY
+        // 这一大坨是做很多的参数的处理
         Map<String, String> parameters = new HashMap<>(directory.getConsumerUrl().getParameters());
         URL urlToRegistry = new ServiceConfigURL(
-            parameters.get(PROTOCOL_KEY) == null ? CONSUMER : parameters.get(PROTOCOL_KEY),
-            parameters.remove(REGISTER_IP_KEY),
-            0,
-            getPath(parameters, type),
-            parameters
-        );
+            parameters.get(PROTOCOL_KEY) == null ? DUBBO : parameters.get(PROTOCOL_KEY),
+            parameters.remove(REGISTER_IP_KEY), 0, getPath(parameters, type), parameters);
         urlToRegistry = urlToRegistry.setScopeModel(directory.getConsumerUrl().getScopeModel());
         urlToRegistry = urlToRegistry.setServiceModel(directory.getConsumerUrl().getServiceModel());
+
+        // 去进行了注册操作
         if (directory.isShouldRegister()) {
             directory.setRegisteredConsumerUrl(urlToRegistry);
             registry.register(directory.getRegisteredConsumerUrl());
         }
+
+        // 构建router chain
+        // 真正经典的责任链模式的代码落地的运用
         directory.buildRouterChain(urlToRegistry);
+        // 进行服务发现和订阅，连接初始化，这块深入得看里面的细节
         directory.subscribe(toSubscribeUrl(urlToRegistry));
 
+        // 对clusterinvoker的选择，是通过cluster组件来实现的
+        // 还有一个点，需要在这里去构建你的filter chain
         return (ClusterInvoker<T>) cluster.join(directory, true);
     }
 
@@ -587,6 +667,7 @@ public class RegistryProtocol implements Protocol, ScopeModelAware {
     }
 
     protected List<RegistryProtocolListener> findRegistryProtocolListeners(URL url) {
+        // SPI机制去进行获取，activate自动激活机制，针对指定的接口，去获取到一批实现类
         return ScopeModelUtil.getExtensionLoader(RegistryProtocolListener.class, url.getScopeModel())
             .getActivateExtension(url, REGISTRY_PROTOCOL_LISTENER_KEY);
     }
@@ -719,7 +800,8 @@ public class RegistryProtocol implements Protocol, ScopeModelAware {
                 logger.debug("original override urls: " + urls);
             }
 
-            List<URL> matchedUrls = getMatchedUrls(urls, subscribeUrl);
+            List<URL> matchedUrls = getMatchedUrls(urls, subscribeUrl.addParameter(CATEGORY_KEY,
+                CONFIGURATORS_CATEGORY));
             if (logger.isDebugEnabled()) {
                 logger.debug("subscribe url: " + subscribeUrl + ", override urls: " + matchedUrls);
             }
@@ -867,9 +949,9 @@ public class RegistryProtocol implements Protocol, ScopeModelAware {
         public ExporterChangeableWrapper(Exporter<T> exporter, Invoker<T> originInvoker) {
             this.exporter = exporter;
             this.originInvoker = originInvoker;
-            FrameworkExecutorRepository frameworkExecutorRepository = originInvoker.getUrl().getOrDefaultFrameworkModel().getBeanFactory()
-                .getBean(FrameworkExecutorRepository.class);
-            this.executor = frameworkExecutorRepository.getSharedScheduledExecutor();
+            ExecutorRepository executorRepository = originInvoker.getUrl().getOrDefaultApplicationModel()
+                .getDefaultExtension(ExecutorRepository.class);
+            this.executor = executorRepository.getSharedScheduledExecutor();
         }
 
         public Invoker<T> getOriginInvoker() {
@@ -901,9 +983,7 @@ public class RegistryProtocol implements Protocol, ScopeModelAware {
                     Map<URL, NotifyListener> overrideListeners = getProviderConfigurationListener(subscribeUrl).getOverrideListeners();
                     NotifyListener listener = overrideListeners.remove(registerUrl);
                     if (listener != null) {
-                        if (!registry.isServiceDiscovery()) {
-                            registry.unsubscribe(subscribeUrl, listener);
-                        }
+                        registry.unsubscribe(subscribeUrl, listener);
                         ApplicationModel applicationModel = getApplicationModel(registerUrl.getScopeModel());
                         if (applicationModel.getModelEnvironment().getConfiguration().convert(Boolean.class, ENABLE_CONFIGURATION_LISTEN, true)) {
                             for (ModuleModel moduleModel : applicationModel.getPubModuleModels()) {

@@ -18,13 +18,10 @@ package org.apache.dubbo.registry.integration;
 
 import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.Version;
-import org.apache.dubbo.common.config.ConfigurationUtils;
 import org.apache.dubbo.common.extension.ExtensionLoader;
 import org.apache.dubbo.common.logger.Logger;
 import org.apache.dubbo.common.logger.LoggerFactory;
-import org.apache.dubbo.common.utils.CollectionUtils;
 import org.apache.dubbo.common.utils.NetUtils;
-import org.apache.dubbo.common.utils.StringUtils;
 import org.apache.dubbo.registry.AddressListener;
 import org.apache.dubbo.registry.NotifyListener;
 import org.apache.dubbo.registry.Registry;
@@ -36,13 +33,11 @@ import org.apache.dubbo.rpc.Protocol;
 import org.apache.dubbo.rpc.RpcException;
 import org.apache.dubbo.rpc.cluster.Cluster;
 import org.apache.dubbo.rpc.cluster.Configurator;
-import org.apache.dubbo.rpc.cluster.Constants;
 import org.apache.dubbo.rpc.cluster.RouterChain;
 import org.apache.dubbo.rpc.cluster.RouterFactory;
 import org.apache.dubbo.rpc.cluster.directory.AbstractDirectory;
-import org.apache.dubbo.rpc.cluster.router.state.BitList;
-import org.apache.dubbo.rpc.model.ModuleModel;
 
+import java.util.Collections;
 import java.util.List;
 
 import static org.apache.dubbo.common.constants.CommonConstants.ANY_VALUE;
@@ -55,7 +50,17 @@ import static org.apache.dubbo.remoting.Constants.CHECK_KEY;
 
 
 /**
- * DynamicDirectory
+ * RegistryDirectory
+ *
+ * 细节的源码分析，那么就全部都是说用静态代码来分析了，除非是特殊意外，可能会用动态调试来分析
+ * DynamicDirectory = RegistryDirectory，2.7.x，2.6.x源码
+ * 他是最核心的用于进行服务发现的一个组件，consumer端肯定是要去调用一个provider端的
+ * 动态目录，动态可变的一个目标服务实例的集群地址（invokers）
+ * 
+ * 目标服务实例集群，不光是说要通过主动查询zk来第一次获取集群地址，还需要zk反过来，如果目标服务实例集群地址有变化
+ * zk会感受到了，zk应该是会反过来推送你的目标服务实例集群地址给DynamicDirectory，动态更新和维护
+ * 自己内存里的目标服务实例集群地址列表，invokers
+ *
  */
 public abstract class DynamicDirectory<T> extends AbstractDirectory<T> implements NotifyListener {
 
@@ -76,7 +81,7 @@ public abstract class DynamicDirectory<T> extends AbstractDirectory<T> implement
     protected final Class<T> serviceType;
 
     /**
-     * Initialization at construction time, assertion not null, and always assign non-null value
+     * Initialization at construction time, assertion not null, and always assign non null value
      */
     protected final URL directoryUrl;
     protected final boolean multiGroup;
@@ -97,6 +102,7 @@ public abstract class DynamicDirectory<T> extends AbstractDirectory<T> implement
     /**
      * Initialization at construction time, assertion not null, and always assign not null value
      */
+    protected volatile URL overrideDirectoryUrl;
     protected volatile URL subscribeUrl;
     protected volatile URL registeredConsumerUrl;
 
@@ -109,30 +115,21 @@ public abstract class DynamicDirectory<T> extends AbstractDirectory<T> implement
      */
     protected volatile List<Configurator> configurators;
 
+    protected volatile List<Invoker<T>> invokers;
+
     protected ServiceInstancesChangedListener serviceListener;
-
-    /**
-     * Should continue route if directory is empty
-     */
-    private final boolean shouldFailFast;
-
-    private volatile InvokersChangedListener invokersChangedListener;
-    private volatile boolean invokersChanged;
-
 
     public DynamicDirectory(Class<T> serviceType, URL url) {
         super(url, true);
 
-        ModuleModel moduleModel = url.getOrDefaultModuleModel();
-
-        this.cluster = moduleModel.getExtensionLoader(Cluster.class).getAdaptiveExtension();
-        this.routerFactory = moduleModel.getExtensionLoader(RouterFactory.class).getAdaptiveExtension();
+        this.cluster = url.getOrDefaultApplicationModel().getExtensionLoader(Cluster.class).getAdaptiveExtension();
+        this.routerFactory = url.getOrDefaultApplicationModel().getExtensionLoader(RouterFactory.class).getAdaptiveExtension();
 
         if (serviceType == null) {
             throw new IllegalArgumentException("service type is null.");
         }
 
-        if (StringUtils.isEmpty(url.getServiceKey())) {
+        if (url.getServiceKey() == null || url.getServiceKey().length() == 0) {
             throw new IllegalArgumentException("registry serviceKey is null.");
         }
 
@@ -142,21 +139,14 @@ public abstract class DynamicDirectory<T> extends AbstractDirectory<T> implement
         this.serviceType = serviceType;
         this.serviceKey = super.getConsumerUrl().getServiceKey();
 
-        this.directoryUrl = consumerUrl;
+        this.overrideDirectoryUrl = this.directoryUrl = consumerUrl;
         String group = directoryUrl.getGroup("");
         this.multiGroup = group != null && (ANY_VALUE.equals(group) || group.contains(","));
-
-        this.shouldFailFast = Boolean.parseBoolean(ConfigurationUtils.getProperty(moduleModel, Constants.SHOULD_FAIL_FAST_KEY, "true"));
     }
 
     @Override
     public void addServiceListener(ServiceInstancesChangedListener instanceListener) {
         this.serviceListener = instanceListener;
-    }
-
-    @Override
-    public ServiceInstancesChangedListener getServiceListener() {
-        return this.serviceListener;
     }
 
     public void setProtocol(Protocol protocol) {
@@ -177,6 +167,7 @@ public abstract class DynamicDirectory<T> extends AbstractDirectory<T> implement
 
     public void subscribe(URL url) {
         setSubscribeUrl(url);
+        // 在这里是一个关键的方法，实现服务发现靠的就是这个方法
         registry.subscribe(url, this);
     }
 
@@ -186,8 +177,8 @@ public abstract class DynamicDirectory<T> extends AbstractDirectory<T> implement
     }
 
     @Override
-    public List<Invoker<T>> doList(BitList<Invoker<T>> invokers, Invocation invocation) {
-        if (forbidden && shouldFailFast) {
+    public List<Invoker<T>> doList(Invocation invocation) {
+        if (forbidden) {
             // 1. No service provider 2. Service providers are disabled
             throw new RpcException(RpcException.FORBIDDEN_EXCEPTION, "No provider available from registry " +
                 getUrl().getAddress() + " for service " + getConsumerUrl().getServiceKey() + " on consumer " +
@@ -196,17 +187,19 @@ public abstract class DynamicDirectory<T> extends AbstractDirectory<T> implement
         }
 
         if (multiGroup) {
-            return this.getInvokers();
+            return this.invokers == null ? Collections.emptyList() : this.invokers;
         }
 
+        // 定义了一个invokers集合
+        List<Invoker<T>> invokers = null;
         try {
             // Get invokers from cache, only runtime routers will be executed.
-            List<Invoker<T>> result = routerChain.route(getConsumerUrl(), invokers, invocation);
-            return result == null ? BitList.emptyList() : result;
+            invokers = routerChain.route(getConsumerUrl(), invocation);
         } catch (Throwable t) {
             logger.error("Failed to execute router: " + getUrl() + ", cause: " + t.getMessage(), t);
-            return BitList.emptyList();
         }
+
+        return invokers == null ? Collections.emptyList() : invokers;
     }
 
     @Override
@@ -216,7 +209,7 @@ public abstract class DynamicDirectory<T> extends AbstractDirectory<T> implement
 
     @Override
     public List<Invoker<T>> getAllInvokers() {
-        return this.getInvokers();
+        return this.invokers == null ? Collections.emptyList() : this.invokers;
     }
 
     /**
@@ -226,7 +219,7 @@ public abstract class DynamicDirectory<T> extends AbstractDirectory<T> implement
      */
     @Override
     public URL getConsumerUrl() {
-        return this.consumerUrl;
+        return this.overrideDirectoryUrl;
     }
 
     /**
@@ -235,7 +228,7 @@ public abstract class DynamicDirectory<T> extends AbstractDirectory<T> implement
      * @return URL
      */
     public URL getOriginalConsumerUrl() {
-        return this.consumerUrl;
+        return this.overrideDirectoryUrl;
     }
 
     /**
@@ -271,16 +264,11 @@ public abstract class DynamicDirectory<T> extends AbstractDirectory<T> implement
     }
 
     public void buildRouterChain(URL url) {
-        this.setRouterChain(RouterChain.buildChain(getInterface(), url));
+        this.setRouterChain(RouterChain.buildChain(url));
     }
 
-    @Override
-    public boolean isAvailable() {
-        if (isDestroyed() || this.forbidden) {
-            return false;
-        }
-        return CollectionUtils.isNotEmpty(getValidInvokers())
-            && getValidInvokers().stream().anyMatch(Invoker::isAvailable);
+    public List<Invoker<T>> getInvokers() {
+        return invokers;
     }
 
     @Override
@@ -308,7 +296,7 @@ public abstract class DynamicDirectory<T> extends AbstractDirectory<T> implement
 
         ExtensionLoader<AddressListener> addressListenerExtensionLoader = getUrl().getOrDefaultModuleModel().getExtensionLoader(AddressListener.class);
         List<AddressListener> supportedListeners = addressListenerExtensionLoader.getActivateExtension(getUrl(), (String[]) null);
-        if (CollectionUtils.isNotEmpty(supportedListeners)) {
+        if (supportedListeners != null && !supportedListeners.isEmpty()) {
             for (AddressListener addressListener : supportedListeners) {
                 addressListener.destroy(getConsumerUrl(), this);
             }
@@ -337,6 +325,9 @@ public abstract class DynamicDirectory<T> extends AbstractDirectory<T> implement
         }
     }
 
+    private volatile InvokersChangedListener invokersChangedListener;
+    private volatile boolean invokersChanged;
+
     public synchronized void setInvokersChangedListener(InvokersChangedListener listener) {
         this.invokersChangedListener = listener;
         if (invokersChangedListener != null && invokersChanged) {
@@ -345,7 +336,6 @@ public abstract class DynamicDirectory<T> extends AbstractDirectory<T> implement
     }
 
     protected synchronized void invokersChanged() {
-        refreshInvoker();
         invokersChanged = true;
         if (invokersChangedListener != null) {
             invokersChangedListener.onChange();

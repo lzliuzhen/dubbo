@@ -140,6 +140,10 @@ final class NettyChannel extends AbstractChannel {
         return active.get();
     }
 
+    // 如果你的网络构建连接建立成功了以后，肯定会把active设置为true，closed肯定是false
+    // 正常情况下，网络连接建立好了以后，isAvailable肯定是true
+    // 有一个异常情况，如果说你的连接的好好的，此时 比如说连接和网络突然之间出错了
+    // 按说，就应该把你的active或者closed都应该会有一个标识的调整
     public void markActive(boolean isActive) {
         active.set(isActive);
     }
@@ -159,9 +163,19 @@ final class NettyChannel extends AbstractChannel {
         boolean success = true;
         int timeout = 0;
         try {
+            // 底层就是基于netty的channel去写数据了，把数据给他写出去了
+            // 在写数据的时候，必然会把你的对象Object，进行序列化，把他必须转为一个二进制字节数组一样的东西
+            // 对方provider端通过netty读取数据之后，会有一个反序列化的一个过程
             ChannelFuture future = channel.writeAndFlush(message);
+            // netty真正在把一个对象写出去的时候，必须提前序列化为二进制的数据，才可以写出去
+
+            // 本身来说netty的底层原始的网络写操作，channel write操作
+            // 可以支持同步，也可以支持异步，如果说是同步的话，在这里你可以通过future进行await进行等待
+            // 如果说是异步的话呢，就可以不用去进行等待，直接就可以返回了
+
             if (sent) {
                 // wait timeout ms
+                // 必须在这里等待你的网络写操作全部完成了才可以返回
                 timeout = getUrl().getPositiveParameter(TIMEOUT_KEY, DEFAULT_TIMEOUT);
                 success = future.await(timeout);
             }

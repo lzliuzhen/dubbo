@@ -17,7 +17,6 @@
 package org.apache.dubbo.config.spring.context.event;
 
 import org.apache.dubbo.config.spring.context.DubboConfigBeanInitializer;
-
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationEvent;
 

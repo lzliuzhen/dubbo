@@ -18,7 +18,6 @@ package org.apache.dubbo.rpc.cluster.support;
 
 import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.threadlocal.NamedInternalThreadFactory;
-import org.apache.dubbo.common.threadpool.manager.FrameworkExecutorRepository;
 import org.apache.dubbo.rpc.Invocation;
 import org.apache.dubbo.rpc.Invoker;
 import org.apache.dubbo.rpc.Result;
@@ -57,14 +56,16 @@ public class ForkingClusterInvoker<T> extends AbstractClusterInvoker<T> {
 
     public ForkingClusterInvoker(Directory<T> directory) {
         super(directory);
-        executor = directory.getUrl().getOrDefaultFrameworkModel().getBeanFactory()
-            .getBean(FrameworkExecutorRepository.class).getSharedExecutor();
+        executor = directory.getUrl().getOrDefaultApplicationModel().getApplicationExecutorRepository().getSharedExecutor();
     }
 
     @Override
     @SuppressWarnings({"unchecked", "rawtypes"})
     public Result doInvoke(final Invocation invocation, List<Invoker<T>> invokers, LoadBalance loadbalance) throws RpcException {
         try {
+            // forking cluster，就是会并行的调用几个服务
+            // 如果谁能先返回结果，就用谁的结果
+
             checkInvokers(invokers, invocation);
             final List<Invoker<T>> selected;
             final int forks = getUrl().getParameter(FORKS_KEY, DEFAULT_FORKS);
@@ -83,14 +84,13 @@ public class ForkingClusterInvoker<T> extends AbstractClusterInvoker<T> {
             }
             RpcContext.getServiceContext().setInvokers((List) selected);
             final AtomicInteger count = new AtomicInteger();
-            final BlockingQueue<Object> ref = new LinkedBlockingQueue<>(1);
+            final BlockingQueue<Object> ref = new LinkedBlockingQueue<>();
+
+            // 遍历invoker，跑并行去调用，谁调用完了，就把结果放到queue里去
             for (final Invoker<T> invoker : selected) {
                 URL consumerUrl = RpcContext.getServiceContext().getConsumerUrl();
                 executor.execute(() -> {
                     try {
-                        if (ref.size() > 0) {
-                            return;
-                        }
                         Result result = invokeWithContextAsync(invoker, invocation, consumerUrl);
                         ref.offer(result);
                     } catch (Throwable e) {
@@ -101,7 +101,9 @@ public class ForkingClusterInvoker<T> extends AbstractClusterInvoker<T> {
                     }
                 });
             }
+
             try {
+                // 阻塞等待，最多就是等待一秒钟就可以了
                 Object ret = ref.poll(timeout, TimeUnit.MILLISECONDS);
                 if (ret instanceof Throwable) {
                     Throwable e = (Throwable) ret;

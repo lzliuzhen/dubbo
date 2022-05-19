@@ -37,8 +37,9 @@ public class ShortArrayMerger implements Merger<short[]> {
         int index = 0;
         for (short[] array : items) {
             if (array != null) {
-                System.arraycopy(array, 0, result, index, array.length);
-                index += array.length;
+                for (short item : array) {
+                    result[index++] = item;
+                }
             }
         }
         return result;

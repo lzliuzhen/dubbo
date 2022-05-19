@@ -85,7 +85,8 @@ public abstract class CuratorFrameworkUtils {
     }
 
 
-    public static List<ServiceInstance> build(URL registryUrl, Collection<org.apache.curator.x.discovery.ServiceInstance<ZookeeperInstance>> instances) {
+    public static List<ServiceInstance> build(URL registryUrl, Collection<org.apache.curator.x.discovery.ServiceInstance<ZookeeperInstance>>
+        instances) {
         return instances.stream().map((i)->build(registryUrl, i)).collect(Collectors.toList());
     }
 
@@ -106,7 +107,7 @@ public abstract class CuratorFrameworkUtils {
         int port = serviceInstance.getPort();
         Map<String, String> metadata = serviceInstance.getSortedMetadata();
         String id = generateId(host, port);
-        ZookeeperInstance zookeeperInstance = new ZookeeperInstance(id, serviceName, metadata);
+        ZookeeperInstance zookeeperInstance = new ZookeeperInstance(null, serviceName, metadata);
         try {
             builder = builder()
                 .id(id)

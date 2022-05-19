@@ -81,9 +81,7 @@ public class ListenerRegistryWrapper implements Registry {
     @Override
     public void unregister(URL url) {
         try {
-            if (registry != null) {
-                registry.unregister(url);
-            }
+            registry.unregister(url);
         } finally {
             if (CollectionUtils.isNotEmpty(listeners) && !UrlUtils.isConsumer(url)) {
                 RuntimeException exception = null;
@@ -152,11 +150,6 @@ public class ListenerRegistryWrapper implements Registry {
                 }
             }
         }
-    }
-
-    @Override
-    public boolean isServiceDiscovery() {
-        return registry.isServiceDiscovery();
     }
 
     @Override

@@ -25,7 +25,5 @@ import org.apache.dubbo.rpc.model.ApplicationModel;
  */
 @SPI(scope = ExtensionScope.APPLICATION)
 public interface ApplicationDeployListener extends DeployListener<ApplicationModel> {
-    default void onModuleStarted(ApplicationModel applicationModel) {
 
-    }
 }

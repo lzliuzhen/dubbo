@@ -16,6 +16,8 @@
  */
 package org.apache.dubbo.metadata.report.support;
 
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.logger.Logger;
 import org.apache.dubbo.common.logger.LoggerFactory;
@@ -29,9 +31,6 @@ import org.apache.dubbo.metadata.report.identifier.KeyTypeEnum;
 import org.apache.dubbo.metadata.report.identifier.MetadataIdentifier;
 import org.apache.dubbo.metadata.report.identifier.ServiceMetadataIdentifier;
 import org.apache.dubbo.metadata.report.identifier.SubscriberMetadataIdentifier;
-
-import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -62,22 +61,23 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.apache.dubbo.common.constants.CommonConstants.CONSUMER_SIDE;
-import static org.apache.dubbo.common.constants.CommonConstants.CYCLE_REPORT_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.FILE_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.PROVIDER_SIDE;
-import static org.apache.dubbo.common.constants.CommonConstants.REPORT_DEFINITION_KEY;
-import static org.apache.dubbo.common.constants.CommonConstants.REPORT_METADATA_KEY;
-import static org.apache.dubbo.common.constants.CommonConstants.RETRY_PERIOD_KEY;
-import static org.apache.dubbo.common.constants.CommonConstants.RETRY_TIMES_KEY;
-import static org.apache.dubbo.common.constants.CommonConstants.SYNC_REPORT_KEY;
 import static org.apache.dubbo.common.utils.StringUtils.replace;
 import static org.apache.dubbo.metadata.report.support.Constants.CACHE;
+import static org.apache.dubbo.metadata.report.support.Constants.CYCLE_REPORT_KEY;
 import static org.apache.dubbo.metadata.report.support.Constants.DEFAULT_METADATA_REPORT_CYCLE_REPORT;
 import static org.apache.dubbo.metadata.report.support.Constants.DEFAULT_METADATA_REPORT_RETRY_PERIOD;
 import static org.apache.dubbo.metadata.report.support.Constants.DEFAULT_METADATA_REPORT_RETRY_TIMES;
 import static org.apache.dubbo.metadata.report.support.Constants.DUBBO_METADATA;
+import static org.apache.dubbo.metadata.report.support.Constants.RETRY_PERIOD_KEY;
+import static org.apache.dubbo.metadata.report.support.Constants.RETRY_TIMES_KEY;
+import static org.apache.dubbo.metadata.report.support.Constants.SYNC_REPORT_KEY;
 import static org.apache.dubbo.metadata.report.support.Constants.USER_HOME;
 
+/**
+ *
+ */
 public abstract class AbstractMetadataReport implements MetadataReport {
 
     protected final static String DEFAULT_ROOT = "dubbo";
@@ -101,9 +101,6 @@ public abstract class AbstractMetadataReport implements MetadataReport {
     private AtomicBoolean initialized = new AtomicBoolean(false);
     public MetadataReportRetry metadataReportRetry;
     private ScheduledExecutorService reportTimerScheduler;
-
-    private final boolean reportMetadata;
-    private final boolean reportDefinition;
 
     public AbstractMetadataReport(URL reportServerURL) {
         setUrl(reportServerURL);
@@ -135,9 +132,6 @@ public abstract class AbstractMetadataReport implements MetadataReport {
             reportTimerScheduler = Executors.newSingleThreadScheduledExecutor(new NamedThreadFactory("DubboMetadataReportTimer", true));
             reportTimerScheduler.scheduleAtFixedRate(this::publishAll, calculateStartTime(), ONE_DAY_IN_MILLISECONDS, TimeUnit.MILLISECONDS);
         }
-
-        this.reportMetadata = reportServerURL.getParameter(REPORT_METADATA_KEY, false);
-        this.reportDefinition = reportServerURL.getParameter(REPORT_DEFINITION_KEY, true);
     }
 
     public URL getUrl() {
@@ -175,24 +169,8 @@ public abstract class AbstractMetadataReport implements MetadataReport {
                     if (!file.exists()) {
                         file.createNewFile();
                     }
-
-                    Properties tmpProperties;
-                    if (!syncReport) {
-                        // When syncReport = false, properties.setProperty and properties.store are called from the same
-                        // thread(reportCacheExecutor), so deep copy is not required
-                        tmpProperties = properties;
-                    } else {
-                        // Using store method and setProperty method of the this.properties will cause lock contention
-                        // under multi-threading, so deep copy a new container
-                        tmpProperties = new Properties();
-                        Set<Map.Entry<Object, Object>> entries = properties.entrySet();
-                        for (Map.Entry<Object, Object> entry : entries) {
-                            tmpProperties.setProperty((String) entry.getKey(), (String) entry.getValue());
-                        }
-                    }
-
                     try (FileOutputStream outputFile = new FileOutputStream(file)) {
-                        tmpProperties.store(outputFile, "Dubbo metadataReport Cache");
+                        properties.store(outputFile, "Dubbo metadataReport Cache");
                     }
                 } finally {
                     lock.release();
@@ -386,16 +364,6 @@ public abstract class AbstractMetadataReport implements MetadataReport {
      */
     public boolean retry() {
         return doHandleMetadataCollection(failedReports);
-    }
-
-    @Override
-    public boolean shouldReportDefinition() {
-        return reportDefinition;
-    }
-
-    @Override
-    public boolean shouldReportMetadata() {
-        return reportMetadata;
     }
 
     private boolean doHandleMetadataCollection(Map<MetadataIdentifier, Object> metadataMap) {

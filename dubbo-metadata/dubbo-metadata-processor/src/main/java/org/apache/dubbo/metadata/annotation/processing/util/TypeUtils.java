@@ -382,12 +382,7 @@ public interface TypeUtils {
         if (element != null) {
             List<? extends TypeParameterElement> typeParameterElements = element.getTypeParameters();
             if (!typeParameterElements.isEmpty()) {
-                List<? extends TypeMirror> typeMirrors;
-                if (type instanceof DeclaredType) {
-                    typeMirrors = ((DeclaredType) type).getTypeArguments();
-                } else {
-                    typeMirrors = invokeMethod(type, "getTypeArguments");
-                }
+                List<TypeMirror> typeMirrors = invokeMethod(type, "getTypeArguments");
                 StringBuilder typeBuilder = new StringBuilder(element.toString());
                 typeBuilder.append('<');
                 for (int i = 0; i < typeMirrors.size(); i++) {

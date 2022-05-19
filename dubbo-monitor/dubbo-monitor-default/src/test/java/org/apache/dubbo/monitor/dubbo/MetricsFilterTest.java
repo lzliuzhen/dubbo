@@ -51,7 +51,6 @@ import java.util.concurrent.Callable;
 import java.util.function.Function;
 
 import static org.apache.dubbo.common.constants.CommonConstants.CONSUMER_SIDE;
-import static org.apache.dubbo.common.constants.CommonConstants.METHOD_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.PROVIDER;
 import static org.apache.dubbo.common.constants.CommonConstants.SIDE_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.TIMEOUT_KEY;
@@ -60,6 +59,7 @@ import static org.apache.dubbo.monitor.Constants.DUBBO_CONSUMER_METHOD;
 import static org.apache.dubbo.monitor.Constants.DUBBO_GROUP;
 import static org.apache.dubbo.monitor.Constants.DUBBO_PROVIDER;
 import static org.apache.dubbo.monitor.Constants.DUBBO_PROVIDER_METHOD;
+import static org.apache.dubbo.monitor.Constants.METHOD;
 import static org.apache.dubbo.monitor.Constants.SERVICE;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doNothing;
@@ -154,7 +154,7 @@ public class MetricsFilterTest {
         FastCompass dubboMethod = metricManager.getFastCompass(DUBBO_GROUP, new MetricName(DUBBO_CONSUMER_METHOD, new HashMap<String, String>(4) {
             {
                 put(SERVICE, "org.apache.dubbo.monitor.dubbo.service.DemoService");
-                put(METHOD_KEY, "void sayName(Integer)");
+                put(METHOD, "void sayName(Integer)");
             }
         }, MetricLevel.NORMAL));
         long timestamp = System.currentTimeMillis() / 5000 * 5000;
@@ -186,7 +186,7 @@ public class MetricsFilterTest {
         FastCompass dubboMethod = metricManager.getFastCompass(DUBBO_GROUP, new MetricName(DUBBO_CONSUMER_METHOD, new HashMap<String, String>(4) {
             {
                 put(SERVICE, "org.apache.dubbo.monitor.dubbo.service.DemoService");
-                put(METHOD_KEY, "void timeoutException()");
+                put(METHOD, "void timeoutException()");
             }
         }, MetricLevel.NORMAL));
         long timestamp = System.currentTimeMillis() / 5000 * 5000;
@@ -216,7 +216,7 @@ public class MetricsFilterTest {
         FastCompass dubboMethod = metricManager.getFastCompass(DUBBO_GROUP, new MetricName(DUBBO_PROVIDER_METHOD, new HashMap<String, String>(4) {
             {
                 put(SERVICE, "org.apache.dubbo.monitor.dubbo.service.DemoService");
-                put(METHOD_KEY, "void sayName()");
+                put(METHOD, "void sayName()");
             }
         }, MetricLevel.NORMAL));
         long timestamp = System.currentTimeMillis() / 5000 * 5000;

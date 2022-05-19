@@ -17,36 +17,38 @@
 package org.apache.dubbo.rpc.cluster;
 
 import org.apache.dubbo.common.URL;
-import org.apache.dubbo.common.Version;
-import org.apache.dubbo.common.config.ConfigurationUtils;
 import org.apache.dubbo.common.logger.Logger;
 import org.apache.dubbo.common.logger.LoggerFactory;
+import org.apache.dubbo.common.threadpool.manager.ExecutorRepository;
 import org.apache.dubbo.common.utils.CollectionUtils;
-import org.apache.dubbo.common.utils.Holder;
-import org.apache.dubbo.common.utils.NetUtils;
 import org.apache.dubbo.rpc.Invocation;
 import org.apache.dubbo.rpc.Invoker;
-import org.apache.dubbo.rpc.RpcContext;
-import org.apache.dubbo.rpc.cluster.router.RouterResult;
-import org.apache.dubbo.rpc.cluster.router.RouterSnapshotNode;
-import org.apache.dubbo.rpc.cluster.router.RouterSnapshotSwitcher;
+import org.apache.dubbo.rpc.cluster.router.state.AddrCache;
 import org.apache.dubbo.rpc.cluster.router.state.BitList;
+import org.apache.dubbo.rpc.cluster.router.state.RouterCache;
 import org.apache.dubbo.rpc.cluster.router.state.StateRouter;
 import org.apache.dubbo.rpc.cluster.router.state.StateRouterFactory;
-import org.apache.dubbo.rpc.cluster.router.state.TailStateRouter;
-import org.apache.dubbo.rpc.model.ModuleModel;
-import org.apache.dubbo.rpc.model.ScopeModelUtil;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 import static org.apache.dubbo.rpc.cluster.Constants.ROUTER_KEY;
+import static org.apache.dubbo.rpc.cluster.Constants.STATE_ROUTER_KEY;
 
 /**
  * Router chain
+ * 路由链条，有一些路由的规则，通过这些路由规则的过滤，可以帮你把可以用来访问的目标服务实例invokers筛选出来
+ * 责任链模式，filter链条，invoker链条，router链条
+ *
  */
 public class RouterChain<T> {
     private static final Logger logger = LoggerFactory.getLogger(RouterChain.class);
@@ -54,7 +56,7 @@ public class RouterChain<T> {
     /**
      * full list of addresses from registry, classified by method name.
      */
-    private volatile BitList<Invoker<T>> invokers = BitList.emptyList();
+    private volatile List<Invoker<T>> invokers = Collections.emptyList();
 
     /**
      * containing all routers, reconstruct every time 'route://' urls change.
@@ -65,72 +67,79 @@ public class RouterChain<T> {
      * Fixed router instances: ConfigConditionRouter, TagRouter, e.g.,
      * the rule for each instance may change but the instance will never delete or recreate.
      */
-    private volatile List<Router> builtinRouters = Collections.emptyList();
+    private List<Router> builtinRouters = Collections.emptyList();
 
-    private volatile StateRouter<T> headStateRouter;
+    private List<StateRouter> builtinStateRouters = Collections.emptyList();
+    private List<StateRouter> stateRouters = Collections.emptyList();
+    private final ExecutorRepository executorRepository;
 
-    private volatile List<StateRouter<T>> stateRouters;
+    protected URL url;
 
-    /**
-     * Should continue route if current router's result is empty
-     */
-    private final boolean shouldFailFast;
+    private AtomicReference<AddrCache<T>> cache = new AtomicReference<>();
 
-    private final RouterSnapshotSwitcher routerSnapshotSwitcher;
+    private final Semaphore loopPermit = new Semaphore(1);
+    private final Semaphore loopPermitNotify = new Semaphore(1);
 
-    public static <T> RouterChain<T> buildChain(Class<T> interfaceClass, URL url) {
-        ModuleModel moduleModel = url.getOrDefaultModuleModel();
+    private final ExecutorService loopPool;
 
-        List<RouterFactory> extensionFactories = moduleModel.getExtensionLoader(RouterFactory.class)
+    private AtomicBoolean firstBuildCache = new AtomicBoolean(true);
+
+    public static <T> RouterChain<T> buildChain(URL url) {
+        return new RouterChain<>(url);
+    }
+
+    private RouterChain(URL url) {
+        // router是什么概念，路由的概念，就是说你的当前的consumer的服务实例，他到底可以路由到哪些provider服务实例上去
+        // 进行后续的访问，这里就需要一套路由规则，router chain，就可以把你的consumer服务实例约定好
+        // 到底有哪些provider服务实例是可以路由过去进行访问的
+
+        // 通过ExecutorRepository，线程池存储组件
+        // 从这个线程池存储组件里，会获取出来对应的一个新的线程池，model组件体系，以model作为一个入口，访问所有的框架内部的公共使用的组件
+        // SPI、deployer、repository、manager，各种公共组件，通过model作为一个入口都可以获取和访问
+        executorRepository = url.getOrDefaultApplicationModel().getExtensionLoader(ExecutorRepository.class)
+            .getDefaultExtension();
+        loopPool = executorRepository.nextExecutorExecutor();
+
+        // 针对router工厂使用的是SPI的自动激活的机制，拿到的一个router工厂的list
+        List<RouterFactory> extensionFactories = url.getOrDefaultApplicationModel().getExtensionLoader(RouterFactory.class)
             .getActivateExtension(url, ROUTER_KEY);
-
+        // 遍历所有的router工厂，每个router工厂都获取到一个router，构建出一个router list
+        // java8的语法糖在dubbo里有大量的运用
         List<Router> routers = extensionFactories.stream()
             .map(factory -> factory.getRouter(url))
             .sorted(Router::compareTo)
             .collect(Collectors.toList());
 
-        List<StateRouter<T>> stateRouters = moduleModel
-            .getExtensionLoader(StateRouterFactory.class)
-            .getActivateExtension(url, ROUTER_KEY)
-            .stream()
-            .map(factory -> factory.getRouter(interfaceClass, url))
-            .collect(Collectors.toList());
-
-
-        boolean shouldFailFast = Boolean.parseBoolean(ConfigurationUtils.getProperty(moduleModel, Constants.SHOULD_FAIL_FAST_KEY, "true"));
-
-        RouterSnapshotSwitcher routerSnapshotSwitcher = ScopeModelUtil.getFrameworkModel(moduleModel).getBeanFactory().getBean(RouterSnapshotSwitcher.class);
-
-        return new RouterChain<>(routers, stateRouters, shouldFailFast, routerSnapshotSwitcher);
-    }
-
-    public RouterChain(List<Router> routers, List<StateRouter<T>> stateRouters, boolean shouldFailFast, RouterSnapshotSwitcher routerSnapshotSwitcher) {
+        // router链条，就是一个list，通过有序list的封装，构建了一个有顺序的router链条
+        // 后续要进行route路由的时候，就按照顺序，一个一个的路由就可以了
         initWithRouters(routers);
 
+        // 通过SPI机制，StateRouterFactory，有状态的router是这个意思
+        List<StateRouterFactory> extensionStateRouterFactories = url.getOrDefaultApplicationModel()
+            .getExtensionLoader(StateRouterFactory.class)
+            .getActivateExtension(url, STATE_ROUTER_KEY);
+
+        List<StateRouter> stateRouters = extensionStateRouterFactories.stream()
+            .map(factory -> factory.getRouter(url, this))
+            .sorted(StateRouter::compareTo)
+            .collect(Collectors.toList());
+
+        // init state routers
         initWithStateRouters(stateRouters);
-
-        this.shouldFailFast = shouldFailFast;
-        this.routerSnapshotSwitcher = routerSnapshotSwitcher;
-    }
-
-    private void initWithStateRouters(List<StateRouter<T>> stateRouters) {
-        StateRouter<T> stateRouter = TailStateRouter.getInstance();
-        for (int i = stateRouters.size() - 1; i >= 0; i--) {
-            StateRouter<T> nextStateRouter = stateRouters.get(i);
-            nextStateRouter.setNextRouter(stateRouter);
-            stateRouter = nextStateRouter;
-        }
-        this.headStateRouter = stateRouter;
-        this.stateRouters = Collections.unmodifiableList(stateRouters);
     }
 
     /**
      * the resident routers must being initialized before address notification.
-     * only for ut
+     * FIXME: this method should not be public
      */
     public void initWithRouters(List<Router> builtinRouters) {
         this.builtinRouters = builtinRouters;
-        this.routers = new LinkedList<>(builtinRouters);
+        this.routers = new ArrayList<>(builtinRouters);
+    }
+
+    private void initWithStateRouters(List<StateRouter> builtinRouters) {
+        this.builtinStateRouters = builtinRouters;
+        this.stateRouters = new ArrayList<>(builtinRouters);
     }
 
     /**
@@ -141,205 +150,198 @@ public class RouterChain<T> {
      *
      * @param routers routers from 'router://' rules in 2.6.x or before.
      */
-    public void addRouters(List<Router> routers) {
-        List<Router> newRouters = new LinkedList<>();
+    public void addRouters(List<Router> routers) { // 后续可以对一个router链条去做一个维护
+        List<Router> newRouters = new ArrayList<>();
         newRouters.addAll(builtinRouters);
         newRouters.addAll(routers);
         CollectionUtils.sort(newRouters);
         this.routers = newRouters;
     }
 
+    public void addStateRouters(List<StateRouter> stateRouters) {
+        List<StateRouter> newStateRouters = new ArrayList<>();
+        newStateRouters.addAll(builtinStateRouters);
+        newStateRouters.addAll(stateRouters);
+        CollectionUtils.sort(newStateRouters);
+        this.stateRouters = newStateRouters;
+    }
+
     public List<Router> getRouters() {
         return routers;
     }
 
-    public StateRouter<T> getHeadStateRouter() {
-        return headStateRouter;
-    }
-
-    public List<Invoker<T>> route(URL url, BitList<Invoker<T>> availableInvokers, Invocation invocation) {
-        if (RpcContext.getServiceContext().isNeedPrintRouterSnapshot()) {
-            return routeAndPrint(url, availableInvokers, invocation);
-        } else {
-            return simpleRoute(url, availableInvokers, invocation);
-        }
-    }
-
-    public List<Invoker<T>> routeAndPrint(URL url, BitList<Invoker<T>> availableInvokers, Invocation invocation) {
-        RouterSnapshotNode<T> snapshot = buildRouterSnapshot(url, availableInvokers, invocation);
-        logRouterSnapshot(url, invocation, snapshot);
-        return snapshot.getChainOutputInvokers();
-    }
-
-    public List<Invoker<T>> simpleRoute(URL url, BitList<Invoker<T>> availableInvokers, Invocation invocation) {
-        BitList<Invoker<T>> resultInvokers = availableInvokers.clone();
-
-        // 1. route state router
-        resultInvokers = headStateRouter.route(resultInvokers, url, invocation, false, null);
-        if (resultInvokers.isEmpty() && (shouldFailFast || routers.isEmpty())) {
-            printRouterSnapshot(url, availableInvokers, invocation);
-            return BitList.emptyList();
-        }
-
-        if (routers.isEmpty()) {
-            return resultInvokers;
-        }
-        List<Invoker<T>> commonRouterResult = resultInvokers.cloneToArrayList();
-        // 2. route common router
-        for (Router router : routers) {
-            // Copy resultInvokers to a arrayList. BitList not support
-            RouterResult<Invoker<T>> routeResult = router.route(commonRouterResult, url, invocation, false);
-            commonRouterResult = routeResult.getResult();
-            if (CollectionUtils.isEmpty(commonRouterResult) && shouldFailFast) {
-                printRouterSnapshot(url, availableInvokers, invocation);
-                return BitList.emptyList();
-            }
-
-            // stop continue routing
-            if (!routeResult.isNeedContinueRoute()) {
-                return commonRouterResult;
-            }
-        }
-
-        if (commonRouterResult.isEmpty()) {
-            printRouterSnapshot(url, availableInvokers, invocation);
-            return BitList.emptyList();
-        }
-
-        return commonRouterResult;
+    public List<StateRouter> getStateRouters() {
+        return stateRouters;
     }
 
     /**
-     * store each router's input and output, log out if empty
+     * @param url
+     * @param invocation
+     * @return
      */
-    private void printRouterSnapshot(URL url, BitList<Invoker<T>> availableInvokers, Invocation invocation) {
-        if (logger.isWarnEnabled()) {
-            logRouterSnapshot(url, invocation, buildRouterSnapshot(url, availableInvokers, invocation));
-        }
-    }
+    public List<Invoker<T>> route(URL url, Invocation invocation) {
+        AddrCache<T> cache = this.cache.get();
+        List<Invoker<T>> finalInvokers = null;
 
-    /**
-     * Build each router's result
-     */
-    public RouterSnapshotNode<T> buildRouterSnapshot(URL url, BitList<Invoker<T>> availableInvokers, Invocation invocation) {
-        BitList<Invoker<T>> resultInvokers = availableInvokers.clone();
-        RouterSnapshotNode<T> parentNode = new RouterSnapshotNode<T>("Parent", resultInvokers.clone());
-        parentNode.setNodeOutputInvokers(resultInvokers.clone());
+        if (cache != null) {
+            // 构建出来了一个bitlist，把我们的invokers封装到了一个bitlist里面去
+            BitList<Invoker<T>> finalBitListInvokers = new BitList<>(invokers, false);
+            for (StateRouter stateRouter : stateRouters) {
+                if (stateRouter.isEnable()) {
+                    // 每一个state router的名称，就对应着一个router cache
+                    RouterCache<T> routerCache = cache.getCache().get(stateRouter.getName());
+                    finalBitListInvokers = stateRouter.route(finalBitListInvokers, routerCache, url, invocation);
+                }
+            }
 
-        // 1. route state router
-        Holder<RouterSnapshotNode<T>> nodeHolder = new Holder<>();
-        nodeHolder.set(parentNode);
-
-        resultInvokers = headStateRouter.route(resultInvokers, url, invocation, true, nodeHolder);
-
-        // result is empty, log out
-        if (routers.isEmpty() || (resultInvokers.isEmpty() && shouldFailFast)) {
-            parentNode.setChainOutputInvokers(resultInvokers.clone());
-            return parentNode;
+            // 对我们的bitlist invokers，使用state router都执行完路由操作以后，就会把剩余的数据封装为一个普通通的final invokers list
+            finalInvokers = new ArrayList<>(finalBitListInvokers.size());
+            finalInvokers.addAll(finalBitListInvokers);
         }
 
-        RouterSnapshotNode<T> commonRouterNode = new RouterSnapshotNode<T>("CommonRouter", resultInvokers.clone());
-        parentNode.appendNode(commonRouterNode);
-        List<Invoker<T>> commonRouterResult = resultInvokers;
-        // 2. route common router
+        if (finalInvokers == null) {
+            finalInvokers = new ArrayList<>(invokers);
+        }
+
+        // 针对final invokers list，此时就可以再用普通的router执行后续的路由过滤
         for (Router router : routers) {
-            // Copy resultInvokers to a arrayList. BitList not support
-            List<Invoker<T>> inputInvokers = new ArrayList<>(commonRouterResult);
-
-            RouterSnapshotNode<T> currentNode = new RouterSnapshotNode<T>(router.getClass().getSimpleName(), inputInvokers);
-
-            // append to router node chain
-            commonRouterNode.appendNode(currentNode);
-            commonRouterNode = currentNode;
-
-            RouterResult<Invoker<T>> routeStateResult = router.route(inputInvokers, url, invocation, true);
-            List<Invoker<T>> routeResult = routeStateResult.getResult();
-            String routerMessage = routeStateResult.getMessage();
-
-            currentNode.setNodeOutputInvokers(routeResult);
-            currentNode.setRouterMessage(routerMessage);
-
-            commonRouterResult = routeResult;
-
-            // result is empty, log out
-            if (CollectionUtils.isEmpty(routeResult) && shouldFailFast) {
-                break;
-            }
-
-            if (!routeStateResult.isNeedContinueRoute()) {
-                break;
-            }
+            finalInvokers = router.route(finalInvokers, url, invocation);
         }
-        commonRouterNode.setChainOutputInvokers(commonRouterNode.getNodeOutputInvokers());
 
-        // 3. set router chain output reverse
-        RouterSnapshotNode<T> currentNode = commonRouterNode;
-        while (currentNode != null){
-            RouterSnapshotNode<T> parent = currentNode.getParentNode();
-            if (parent != null) {
-                // common router only has one child invoke
-                parent.setChainOutputInvokers(currentNode.getChainOutputInvokers());
-            }
-            currentNode = parent;
-        }
-        return parentNode;
-    }
-
-    private void logRouterSnapshot(URL url, Invocation invocation, RouterSnapshotNode<T> snapshotNode) {
-        if (snapshotNode.getChainOutputInvokers() == null ||
-            snapshotNode.getChainOutputInvokers().isEmpty()) {
-            if (logger.isWarnEnabled()) {
-                String message = "No provider available after route for the service " + url.getServiceKey()
-                    + " from registry " + url.getAddress()
-                    + " on the consumer " + NetUtils.getLocalHost()
-                    + " using the dubbo version " + Version.getVersion() + ". Router snapshot is below: \n" + snapshotNode.toString();
-                if (routerSnapshotSwitcher.isEnable()) {
-                    routerSnapshotSwitcher.setSnapshot(message);
-                }
-                logger.warn(message);
-            }
-        } else {
-            if (logger.isInfoEnabled()) {
-                String message = "Router snapshot service " + url.getServiceKey()
-                    + " from registry " + url.getAddress()
-                    + " on the consumer " + NetUtils.getLocalHost()
-                    + " using the dubbo version " + Version.getVersion() + " is below: \n" + snapshotNode.toString();
-                if (routerSnapshotSwitcher.isEnable()) {
-                    routerSnapshotSwitcher.setSnapshot(message);
-                }
-                logger.info(message);
-            }
-        }
+        return finalInvokers;
     }
 
     /**
      * Notify router chain of the initial addresses from registry at the first time.
      * Notify whenever addresses in registry change.
      */
-    public void setInvokers(BitList<Invoker<T>> invokers) {
-        this.invokers = (invokers == null ? BitList.emptyList() : invokers);
-        routers.forEach(router -> router.notify(this.invokers));
-        stateRouters.forEach(router -> router.notify(this.invokers));
+    public void setInvokers(List<Invoker<T>> invokers) {
+        this.invokers = (invokers == null ? Collections.emptyList() : invokers);
+        stateRouters.forEach(router -> router.notify(this.invokers)); // 如果invokers list有变动
+        // 遍历每一个state router，state router都会通知一下invokers list的变动，notify操作
+        routers.forEach(router -> router.notify(this.invokers)); // 普通的router也会做一个notify
+        loop(true); // loop循环操作
     }
 
     /**
-     * for uts only
+     * Build the asynchronous address cache for stateRouter.
+     * @param notify Whether the addresses in registry have changed.
      */
-    @Deprecated
-    public void setHeadStateRouter(StateRouter<T> headStateRouter) {
-        this.headStateRouter = headStateRouter;
+    private void buildCache(boolean notify) {
+        if (CollectionUtils.isEmpty(invokers)) {
+            return;
+        }
+
+        // 在这里就会去进行cache的构建
+        // state router的名称，name -> router cache
+        // router cache，tag -> invokers bitlist的缓存构建关系
+        AddrCache<T> origin = cache.get();
+        List<Invoker<T>> copyInvokers = new ArrayList<>(this.invokers);
+        AddrCache<T> newCache = new AddrCache<T>();
+
+        // 这个东西，就是state router的name -> router cache的缓存映射关系
+        Map<String, RouterCache<T>> routerCacheMap = new HashMap<>((int) (stateRouters.size() / 0.75f) + 1);
+
+        newCache.setInvokers(invokers);
+
+        for (StateRouter stateRouter : stateRouters) {
+            try {
+                // 对每个state router都会去构建一份router cache出来
+                RouterCache routerCache = poolRouter(stateRouter, origin, copyInvokers, notify);
+                //file cache 把state router的name和router cache缓存到一个map里去就可以了
+                routerCacheMap.put(stateRouter.getName(), routerCache);
+            } catch (Throwable t) {
+                logger.error("Failed to pool router: " + stateRouter.getUrl() + ", cause: " + t.getMessage(), t);
+                return;
+            }
+        }
+
+        // 会把最新的router cache map放到addr cache里面去
+        newCache.setCache(routerCacheMap);
+        this.cache.set(newCache); // 还会把他设置到atomic reference里面去
     }
 
     /**
-     * for uts only
+     * Cache the address list for each StateRouter.
+     * @param router router
+     * @param origin The original address cache
+     * @param invokers The full address list
+     * @param notify Whether the addresses in registry has changed.
+     * @return
      */
-    @Deprecated
-    public List<StateRouter<T>> getStateRouters() {
-        return stateRouters;
+    private RouterCache poolRouter(StateRouter router, AddrCache<T> origin, List<Invoker<T>> invokers, boolean notify) {
+        String routerName = router.getName();
+        RouterCache routerCache;
+        if (isCacheMiss(origin, routerName) || router.shouldRePool() || notify) {
+            return router.pool(invokers);
+        } else {
+            routerCache = origin.getCache().get(routerName);
+        }
+        if (routerCache == null) {
+            return new RouterCache();
+        }
+        return routerCache;
+    }
+
+    private boolean isCacheMiss(AddrCache<T> cache, String routerName) {
+        return cache == null || cache.getCache() == null || cache.getInvokers() == null || cache.getCache().get(
+            routerName)
+            == null;
+    }
+
+    /***
+     * Build the asynchronous address cache for stateRouter. 构建一个异步化的address cache，是专门为state router去做的
+     * @param notify Whether the addresses in registry has changed.
+     */
+    public void loop(boolean notify) {
+        // 如果说是第一次来build cache，first build cache肯定是true
+        // 此时做一个cas，就可以把true -> false
+        // 如果是第二次，第三次，第四次，first build cache已经是false，cas一定是没法操作成功的
+        if (firstBuildCache.compareAndSet(true,false)) {
+            // 先构建一下对应的最新的state router的cache数据
+            buildCache(notify);
+        }
+
+        try {
+            if (notify) {
+                // 基于信号量做一个并发的控制
+                if (loopPermitNotify.tryAcquire()) {
+                    loopPool.submit(new NotifyLoopRunnable(true, loopPermitNotify));
+                }
+            } else {
+                if (loopPermit.tryAcquire()) {
+                    loopPool.submit(new NotifyLoopRunnable(false, loopPermit));
+                }
+            }
+        } catch (RejectedExecutionException e) {
+            if (loopPool.isShutdown()){
+                logger.warn("loopPool executor service is shutdown, ignoring notify loop");
+                return;
+            }
+            throw e;
+        }
+    }
+
+    class NotifyLoopRunnable implements Runnable {
+
+        private final boolean notify;
+        private final Semaphore loopPermit;
+
+        public NotifyLoopRunnable(boolean notify, Semaphore loopPermit) {
+            this.notify = notify;
+            this.loopPermit = loopPermit;
+        }
+
+        @Override
+        public void run() {
+            // 在这里是异步化的去进行cache的构建
+            buildCache(notify);
+            loopPermit.release(); // 如果cache构建完毕了之后，就通过loop permit去做一个锁释放操作
+        }
     }
 
     public void destroy() {
-        invokers = BitList.emptyList();
+        invokers = Collections.emptyList();
         for (Router router : routers) {
             try {
                 router.stop();
@@ -350,7 +352,7 @@ public class RouterChain<T> {
         routers = Collections.emptyList();
         builtinRouters = Collections.emptyList();
 
-        for (StateRouter<T> router : stateRouters) {
+        for (StateRouter router : stateRouters) {
             try {
                 router.stop();
             } catch (Exception e) {
@@ -358,6 +360,7 @@ public class RouterChain<T> {
             }
         }
         stateRouters = Collections.emptyList();
-        headStateRouter = TailStateRouter.getInstance();
+        builtinStateRouters = Collections.emptyList();
     }
+
 }

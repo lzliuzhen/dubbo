@@ -23,7 +23,7 @@ import org.apache.dubbo.monitor.Monitor;
 @Deprecated
 public interface MonitorFactory extends org.apache.dubbo.monitor.MonitorFactory {
 
-    com.alibaba.dubbo.monitor.Monitor getMonitor(com.alibaba.dubbo.common.URL url);
+    Monitor getMonitor(com.alibaba.dubbo.common.URL url);
 
     @Override
     default Monitor getMonitor(URL url) {

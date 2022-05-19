@@ -91,10 +91,11 @@ public class CacheFilter implements Filter {
      */
     @Override
     public Result invoke(Invoker<?> invoker, Invocation invocation) throws RpcException {
+        // 就是对你的rpc调用结果做一个缓存，下次再调用的时候，如果有缓存就直接用就可以了
         if (cacheFactory != null && ConfigUtils.isNotEmpty(invoker.getUrl().getMethodParameter(invocation.getMethodName(), CACHE_KEY))) {
             Cache cache = cacheFactory.getCache(invoker.getUrl(), invocation);
             if (cache != null) {
-                String key = StringUtils.toArgumentString(invocation.getArguments());
+                String key = StringUtils.toArgumentString(invocation.getArguments()); // 根据rpc调用里的各种参数拼接一个cache key
                 Object value = cache.get(key);
                 if (value != null) {
                     if (value instanceof ValueWrapper) {
@@ -103,6 +104,7 @@ public class CacheFilter implements Filter {
                         return AsyncRpcResult.newDefaultAsyncResult(value, invocation);
                     }
                 }
+                // 确实是你的缓存值没有，就会直接发起一个invoker调用，拿到cache result结果
                 Result result = invoker.invoke(invocation);
                 if (!result.hasException()) {
                     cache.put(key, new ValueWrapper(result.getValue()));

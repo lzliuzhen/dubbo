@@ -62,7 +62,9 @@ public abstract class AbstractCluster implements Cluster {
     }
 
     private <T> AbstractClusterInvoker<T> buildInterceptorInvoker(AbstractClusterInvoker<T> invoker) {
-        List<InvocationInterceptorBuilder> builders = ScopeModelUtil.getApplicationModel(invoker.getUrl().getScopeModel()).getExtensionLoader(InvocationInterceptorBuilder.class).getActivateExtensions();
+        // SPI机制，通过自动激活机制，拿到一系列的interceptor builder
+        List<InvocationInterceptorBuilder> builders = ScopeModelUtil.getApplicationModel(
+            invoker.getUrl().getScopeModel()).getExtensionLoader(InvocationInterceptorBuilder.class).getActivateExtensions();
         if (CollectionUtils.isEmpty(builders)) {
             return invoker;
         }
@@ -89,6 +91,7 @@ public abstract class AbstractCluster implements Cluster {
 
         @Override
         public Result invoke(Invocation invocation) throws RpcException {
+            // 走一个filter过滤链路，去对rpc调用先走一个filter链条
             return filterInvoker.invoke(invocation);
         }
 

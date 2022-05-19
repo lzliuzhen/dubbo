@@ -43,16 +43,11 @@ public interface Directory<T> extends Node {
 
     /**
      * list invokers.
-     * filtered by invocation
      *
      * @return invokers
      */
     List<Invoker<T>> list(Invocation invocation) throws RpcException;
 
-    /**
-     * list invokers
-     * include all invokers from registry
-     */
     List<Invoker<T>> getAllInvokers();
 
     URL getConsumerUrl();
@@ -70,30 +65,6 @@ public interface Directory<T> extends Node {
     void discordAddresses();
 
     RouterChain<T> getRouterChain();
-
-    /**
-     * invalidate an invoker, add it into reconnect task, remove from list next time
-     * will be recovered by address refresh notification or reconnect success notification
-     *
-     * @param invoker invoker to invalidate
-     */
-    void addInvalidateInvoker(Invoker<T> invoker);
-
-    /**
-     * disable an invoker, remove from list next time
-     * will be removed when invoker is removed by address refresh notification
-     * using in service offline notification
-     *
-     * @param invoker invoker to invalidate
-     */
-    void addDisabledInvoker(Invoker<T> invoker);
-
-    /**
-     * recover a disabled invoker
-     *
-     * @param invoker invoker to invalidate
-     */
-    void recoverDisabledInvoker(Invoker<T> invoker);
 
     default boolean isNotificationReceived() {
         return false;

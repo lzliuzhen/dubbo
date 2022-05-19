@@ -74,12 +74,13 @@
         </dependency>
         <dependency>
             <groupId>org.apache.dubbo</groupId>
-            <artifactId>dubbo-filter-validation</artifactId>
+            <artifactId>dubbo-registry-xds</artifactId>
         </dependency>
         <dependency>
             <groupId>org.apache.dubbo</groupId>
-            <artifactId>dubbo-remoting-http</artifactId>
+            <artifactId>dubbo-filter-validation</artifactId>
         </dependency>
+
 
     </dependencies>
 
@@ -127,7 +128,7 @@
                             <encoding>UTF-8</encoding>
                             <compilerArguments>
                                 <sourcepath>
-                                    ${project.basedir}${file.separator}src${file.separator}main${file.separator}java
+                                    ${project.basedir}/src/main/java
                                 </sourcepath>
                             </compilerArguments>
                         </configuration>

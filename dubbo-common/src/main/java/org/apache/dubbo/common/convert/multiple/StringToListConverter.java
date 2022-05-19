@@ -16,8 +16,6 @@
  */
 package org.apache.dubbo.common.convert.multiple;
 
-import org.apache.dubbo.rpc.model.FrameworkModel;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -27,9 +25,6 @@ import java.util.List;
  * @since 2.7.6
  */
 public class StringToListConverter extends StringToIterableConverter<List> {
-    public StringToListConverter(FrameworkModel frameworkModel) {
-        super(frameworkModel);
-    }
 
     @Override
     protected List createMultiValue(int size, Class<?> multiValueType) {

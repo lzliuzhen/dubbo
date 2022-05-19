@@ -77,6 +77,8 @@ public class RpcContext {
         }
     };
 
+    // thread local，线程本地化的一套数据空间，thread local这个里面的数据读写存取，都是当前线程才有权限的
+    // 通过thread local，就可以把各个线程读取的数据空间做一个隔离
     private static final InternalThreadLocal<RpcServiceContext> SERVICE_CONTEXT = new InternalThreadLocal<RpcServiceContext>() {
         @Override
         protected RpcServiceContext initialValue() {
@@ -107,6 +109,7 @@ public class RpcContext {
         CANCELLATION_CONTEXT.set(oldContext);
     }
 
+
     private boolean remove = true;
 
     protected RpcContext() {
@@ -119,6 +122,10 @@ public class RpcContext {
      */
     public static RpcContextAttachment getServerContext() {
         return SERVER_LOCAL.get();
+    }
+
+    public static void restoreServerContext(RpcContextAttachment oldServerContext) {
+        SERVER_LOCAL.set(oldServerContext);
     }
 
     /**
@@ -158,14 +165,6 @@ public class RpcContext {
         return SERVER_ATTACHMENT.get();
     }
 
-    public boolean canRemove() {
-        return remove;
-    }
-
-    public void clearAfterEachInvoke(boolean remove) {
-        this.remove = remove;
-    }
-
     /**
      * Using to pass environment parameters in the whole invocation. For example, `remotingApplicationName`,
      * `remoteAddress`, etc. {@link RpcServiceContext}
@@ -173,11 +172,8 @@ public class RpcContext {
      * @return context
      */
     public static RpcServiceContext getServiceContext() {
+        // 当前一个线程在执行一个rpc调用的时候，此时就会去获取一个自己的rpc context
         return SERVICE_CONTEXT.get();
-    }
-
-    public static RpcServiceContext getCurrentServiceContext() {
-        return SERVICE_CONTEXT.getWithoutInitialize();
     }
 
     public static void removeServiceContext() {
@@ -196,10 +192,34 @@ public class RpcContext {
         }
     }
 
+
+    public boolean canRemove() {
+        return remove;
+    }
+
+    public void clearAfterEachInvoke(boolean remove) {
+        this.remove = remove;
+    }
+
+    public static void restoreContext(RpcContextAttachment oldContext) {
+        CLIENT_ATTACHMENT.set(oldContext);
+    }
+
     /**
-     * customized for internal use.
+     * remove context.
+     *
+     * @see org.apache.dubbo.rpc.filter.ContextFilter
      */
     public static void removeContext() {
+        removeContext(false);
+    }
+
+    /**
+     * customized for internal use.
+     *
+     * @param checkCanRemove if need check before remove
+     */
+    public static void removeContext(boolean checkCanRemove) {
         if (CLIENT_ATTACHMENT.get().canRemove()) {
             CLIENT_ATTACHMENT.remove();
         }
@@ -533,7 +553,7 @@ public class RpcContext {
      * @return context
      */
     public RpcContext setAttachment(String key, String value) {
-        return setObjectAttachment(key, value);
+        return setObjectAttachment(key, (Object) value);
     }
 
     public RpcContext setAttachment(String key, Object value) {
@@ -739,23 +759,23 @@ public class RpcContext {
      */
     @SuppressWarnings("unchecked")
     public static AsyncContext startAsync() throws IllegalStateException {
-        return RpcContextAttachment.startAsync();
+        return RpcServiceContext.startAsync();
     }
 
     protected void setAsyncContext(AsyncContext asyncContext) {
-        SERVER_ATTACHMENT.get().setAsyncContext(asyncContext);
+        SERVICE_CONTEXT.get().setAsyncContext(asyncContext);
     }
 
     public boolean isAsyncStarted() {
-        return SERVER_ATTACHMENT.get().isAsyncStarted();
+        return SERVICE_CONTEXT.get().isAsyncStarted();
     }
 
     public boolean stopAsync() {
-        return SERVER_ATTACHMENT.get().stopAsync();
+        return SERVICE_CONTEXT.get().stopAsync();
     }
 
     public AsyncContext getAsyncContext() {
-        return SERVER_ATTACHMENT.get().getAsyncContext();
+        return SERVICE_CONTEXT.get().getAsyncContext();
     }
 
     public String getGroup() {
@@ -790,95 +810,7 @@ public class RpcContext {
         SERVICE_CONTEXT.get().setConsumerUrl(consumerUrl);
     }
 
-    @Deprecated
     public static void setRpcContext(URL url) {
-        RpcServiceContext.getServiceContext().setConsumerUrl(url);
-    }
-
-    protected static RestoreContext clearAndStoreContext() {
-        RestoreContext restoreContext = new RestoreContext();
-        RpcContext.removeContext();
-        return restoreContext;
-    }
-
-    protected static RestoreContext storeContext() {
-        return new RestoreContext();
-    }
-
-    public static RestoreServiceContext storeServiceContext() {
-        return new RestoreServiceContext();
-    }
-
-    public static void restoreServiceContext(RestoreServiceContext restoreServiceContext) {
-        if (restoreServiceContext != null) {
-            restoreServiceContext.restore();
-        }
-    }
-
-    protected static void restoreContext(RestoreContext restoreContext) {
-        if (restoreContext != null) {
-            restoreContext.restore();
-        }
-    }
-
-    /**
-     * Used to temporarily store and restore all kinds of contexts of current thread.
-     */
-    public static class RestoreContext {
-        private final RpcServiceContext serviceContext;
-        private final RpcContextAttachment clientAttachment;
-        private final RpcContextAttachment serverAttachment;
-        private final RpcContextAttachment serverLocal;
-
-        public RestoreContext() {
-            serviceContext = getServiceContext().copyOf(false);
-            clientAttachment = getClientAttachment().copyOf(false);
-            serverAttachment = getServerAttachment().copyOf(false);
-            serverLocal = getServerContext().copyOf(false);
-        }
-
-        public void restore() {
-            if (serviceContext != null) {
-                SERVICE_CONTEXT.set(serviceContext);
-            } else {
-                removeServiceContext();
-            }
-            if (clientAttachment != null) {
-                CLIENT_ATTACHMENT.set(clientAttachment);
-            } else {
-                removeClientAttachment();
-            }
-            if (serverAttachment != null) {
-                SERVER_ATTACHMENT.set(serverAttachment);
-            } else {
-                removeServerAttachment();
-            }
-            if (serverLocal != null) {
-                SERVER_LOCAL.set(serverLocal);
-            } else {
-                removeServerContext();
-            }
-        }
-    }
-
-    public static class RestoreServiceContext {
-        private final RpcServiceContext serviceContext;
-
-        public RestoreServiceContext() {
-            RpcServiceContext originContext = getCurrentServiceContext();
-            if (originContext == null) {
-                this.serviceContext = null;
-            } else {
-                this.serviceContext = originContext.copyOf(true);
-            }
-        }
-
-        protected void restore() {
-            if (serviceContext != null) {
-                SERVICE_CONTEXT.set(serviceContext);
-            } else {
-                removeServiceContext();
-            }
-        }
+        RpcServiceContext.setRpcContext(url);
     }
 }

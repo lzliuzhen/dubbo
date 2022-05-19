@@ -16,10 +16,7 @@
  */
 package org.apache.dubbo.config.utils;
 
-import org.apache.dubbo.common.BaseServiceMetadata;
 import org.apache.dubbo.common.config.ReferenceCache;
-import org.apache.dubbo.common.logger.Logger;
-import org.apache.dubbo.common.logger.LoggerFactory;
 import org.apache.dubbo.common.utils.CollectionUtils;
 import org.apache.dubbo.common.utils.StringUtils;
 import org.apache.dubbo.config.ReferenceConfigBase;
@@ -42,7 +39,6 @@ import java.util.concurrent.atomic.AtomicInteger;
  * You can implement and use your own {@link ReferenceConfigBase} cache if you need use complicate strategy.
  */
 public class SimpleReferenceCache implements ReferenceCache {
-    private static final Logger logger = LoggerFactory.getLogger(SimpleReferenceCache.class);
     public static final String DEFAULT_NAME = "_DEFAULT_";
     /**
      * Create the key with the <b>Group</b>, <b>Interface</b> and <b>version</b> attribute of {@link ReferenceConfigBase}.
@@ -59,7 +55,15 @@ public class SimpleReferenceCache implements ReferenceCache {
             throw new IllegalArgumentException("No interface info in ReferenceConfig" + referenceConfig);
         }
 
-        return BaseServiceMetadata.buildServiceKey(iName, referenceConfig.getGroup(), referenceConfig.getVersion());
+        StringBuilder ret = new StringBuilder();
+        if (!StringUtils.isBlank(referenceConfig.getGroup())) {
+            ret.append(referenceConfig.getGroup()).append('/');
+        }
+        ret.append(iName);
+        if (!StringUtils.isBlank(referenceConfig.getVersion())) {
+            ret.append(':').append(referenceConfig.getVersion());
+        }
+        return ret.toString();
     };
 
     private static final AtomicInteger nameIndex = new AtomicInteger();
@@ -110,26 +114,17 @@ public class SimpleReferenceCache implements ReferenceCache {
     public <T> T get(ReferenceConfigBase<T> rc) {
         String key = generator.generateKey(rc);
         Class<?> type = rc.getInterfaceClass();
+        Object proxy = rc.get();
 
-        boolean singleton = rc.getSingleton() == null || rc.getSingleton();
-        T proxy = null;
-        // Check existing proxy of the same 'key' and 'type' first.
-        if (singleton) {
-            proxy = get(key, (Class<T>) type);
-        } else {
-            logger.warn("Using non-singleton ReferenceConfig and ReferenceCache at the same time may cause memory leak. " +
-                "Call ReferenceConfig#get() directly for non-singleton ReferenceConfig instead of using ReferenceCache#get(ReferenceConfig)");
-        }
-
-        if (proxy == null) {
+        references.computeIfAbsent(rc, _rc -> {
             List<ReferenceConfigBase<?>> referencesOfType = referenceTypeMap.computeIfAbsent(type, _t -> Collections.synchronizedList(new ArrayList<>()));
             referencesOfType.add(rc);
             List<ReferenceConfigBase<?>> referenceConfigList = referenceKeyMap.computeIfAbsent(key, _k -> Collections.synchronizedList(new ArrayList<>()));
             referenceConfigList.add(rc);
-            proxy = rc.get();
-        }
+            return proxy;
+        });
 
-        return proxy;
+        return (T) proxy;
     }
 
     /**
@@ -146,25 +141,18 @@ public class SimpleReferenceCache implements ReferenceCache {
     @SuppressWarnings("unchecked")
     public <T> T get(String key, Class<T> type) {
         List<ReferenceConfigBase<?>> referenceConfigs = referenceKeyMap.get(key);
-        if (CollectionUtils.isNotEmpty(referenceConfigs)) {
+        if (referenceConfigs != null && referenceConfigs.size() > 0) {
             return (T) referenceConfigs.get(0).get();
         }
         return null;
     }
 
-    /**
-     * Check and return existing ReferenceConfig and its corresponding proxy instance.
-     *
-     * @param key ServiceKey
-     * @param <T> service interface type
-     * @return the existing proxy instance of the same service key
-     */
     @Override
     @SuppressWarnings("unchecked")
     public <T> T get(String key) {
-        List<ReferenceConfigBase<?>> referenceConfigBases = referenceKeyMap.get(key);
-        if (CollectionUtils.isNotEmpty(referenceConfigBases)) {
-            return (T) referenceConfigBases.get(0).get();
+        List<ReferenceConfigBase<?>> referenceConfigs = referenceKeyMap.get(key);
+        if (referenceConfigs != null && referenceConfigs.size() > 0) {
+            return (T) referenceConfigs.get(0).get();
         }
         return null;
     }
@@ -183,18 +171,11 @@ public class SimpleReferenceCache implements ReferenceCache {
         return Collections.unmodifiableList(proxiesOfType);
     }
 
-    /**
-     * Check and return existing ReferenceConfig and its corresponding proxy instance.
-     *
-     * @param type service interface class
-     * @param <T>  service interface type
-     * @return the existing proxy instance of the same interface definition
-     */
     @Override
     @SuppressWarnings("unchecked")
     public <T> T get(Class<T> type) {
         List<ReferenceConfigBase<?>> referenceConfigBases = referenceTypeMap.get(type);
-        if (CollectionUtils.isNotEmpty(referenceConfigBases)) {
+        if (referenceConfigBases != null && referenceConfigBases.size() > 0) {
             return (T) referenceConfigBases.get(0).get();
         }
         return null;
@@ -260,9 +241,7 @@ public class SimpleReferenceCache implements ReferenceCache {
 
     private void destroyReference(ReferenceConfigBase<?> rc) {
         Destroyable proxy = (Destroyable) rc.get();
-        if (proxy != null){
-            proxy.$destroy();
-        }
+        proxy.$destroy();
         rc.destroy();
     }
 

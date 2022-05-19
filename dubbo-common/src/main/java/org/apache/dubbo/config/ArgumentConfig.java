@@ -31,12 +31,12 @@ public class ArgumentConfig implements Serializable {
     private static final long serialVersionUID = -2165482463925213595L;
 
     /**
-     * The argument index: index -1 represents not set
+     * The argument index: index -1 represents not set，入参排列的顺序
      */
     private Integer index = -1;
 
     /**
-     * Argument type
+     * Argument type，主要是方法的每个入参的一个类型
      */
     private String type;
 

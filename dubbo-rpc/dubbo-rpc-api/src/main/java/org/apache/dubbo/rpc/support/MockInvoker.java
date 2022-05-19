@@ -16,6 +16,7 @@
  */
 package org.apache.dubbo.rpc.support;
 
+import com.alibaba.fastjson.JSON;
 import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.extension.ExtensionDirector;
 import org.apache.dubbo.common.extension.ExtensionInjector;
@@ -31,8 +32,6 @@ import org.apache.dubbo.rpc.ProxyFactory;
 import org.apache.dubbo.rpc.Result;
 import org.apache.dubbo.rpc.RpcException;
 import org.apache.dubbo.rpc.RpcInvocation;
-
-import com.alibaba.fastjson.JSON;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Type;
@@ -66,7 +65,7 @@ final public class MockInvoker<T> implements Invoker<T> {
     }
 
     public static Object parseMockValue(String mock, Type[] returnTypes) throws Exception {
-        Object value;
+        Object value = null;
         if ("empty".equals(mock)) {
             value = ReflectUtils.getEmptyObject(returnTypes != null && returnTypes.length > 0 ? (Class<?>) returnTypes[0] : null);
         } else if ("null".equals(mock)) {
@@ -100,16 +99,26 @@ final public class MockInvoker<T> implements Invoker<T> {
         if (invocation instanceof RpcInvocation) {
             ((RpcInvocation) invocation).setInvoker(this);
         }
-        String mock = getUrl().getMethodParameter(invocation.getMethodName(), MOCK_KEY);
+        String mock = null;
+        if (getUrl().hasMethodParameter(invocation.getMethodName())) {
+            mock = getUrl().getParameter(invocation.getMethodName() + "." + MOCK_KEY);
+        }
+        if (StringUtils.isBlank(mock)) {
+            mock = getUrl().getParameter(MOCK_KEY);
+        }
 
         if (StringUtils.isBlank(mock)) {
             throw new RpcException(new IllegalAccessException("mock can not be null. url :" + url));
         }
         mock = normalizeMock(URL.decode(mock));
+
         if (mock.startsWith(RETURN_PREFIX)) {
             mock = mock.substring(RETURN_PREFIX.length()).trim();
             try {
+                // 针对这个rpc调用，看一下本次调用要返回的类型是什么
                 Type[] returnTypes = RpcUtils.getReturnTypes(invocation);
+                // 他会根据你的mock的值，帮助你去生成一个mock出来的值就可以了
+                // 返回的可能是null、object、map、list、字符串
                 Object value = parseMockValue(mock, returnTypes);
                 return AsyncRpcResult.newDefaultAsyncResult(value, invocation);
             } catch (Exception ew) {

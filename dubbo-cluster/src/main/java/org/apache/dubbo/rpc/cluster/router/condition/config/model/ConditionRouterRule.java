@@ -24,8 +24,16 @@ import java.util.stream.Collectors;
 
 import static org.apache.dubbo.rpc.cluster.Constants.CONDITIONS_KEY;
 
+/**
+ *
+ */
 public class ConditionRouterRule extends AbstractRouterRule {
-    private List<String> conditions;
+
+    private List<String> conditions; // 包含了一个字符串的list
+    // 每个string就是一个condition条件规则，这个string的字符串条件规则，在这里就是我刚才写的那种规则
+    // host =xx => host
+    // dubbo，条件规则的语法，上网去查一下就可以了
+
 
     @SuppressWarnings("unchecked")
     public static ConditionRouterRule parseFromMap(Map<String, Object> map) {

@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.dubbo.rpc.protocol.tri;
 
 import org.apache.dubbo.common.constants.CommonConstants;
@@ -38,13 +37,16 @@ public enum TripleHeaderEnum {
     APPLICATION_GRPC("application/grpc"),
     GRPC_ENCODING("grpc-encoding"),
     GRPC_ACCEPT_ENCODING("grpc-accept-encoding"),
+    TRICE_ID_KEY("tri-trace-traceid"),
+    RPC_ID_KEY("tri-trace-rpcid"),
     CONSUMER_APP_NAME_KEY("tri-consumer-appname"),
+    UNIT_INFO_KEY("tri-unit-info"),
     SERVICE_VERSION("tri-service-version"),
     SERVICE_GROUP("tri-service-group");
 
-    static final Map<String, TripleHeaderEnum> enumMap = new HashMap<>();
+    static Map<String, TripleHeaderEnum> enumMap = new HashMap<>();
 
-    static final Set<String> excludeAttachmentsSet = new HashSet<>();
+    static Set<String> excludeAttachmentsSet = new HashSet<>();
 
     static {
         for (TripleHeaderEnum item : TripleHeaderEnum.values()) {
@@ -63,6 +65,14 @@ public enum TripleHeaderEnum {
 
     TripleHeaderEnum(String header) {
         this.header = header;
+    }
+
+    public static TripleHeaderEnum getEnum(String header) {
+        return enumMap.get(header);
+    }
+
+    public static boolean contains(String header) {
+        return enumMap.containsKey(header);
     }
 
     public static boolean containsExcludeAttachments(String key) {

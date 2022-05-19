@@ -53,6 +53,8 @@ public abstract class AbstractServer extends AbstractEndpoint implements Remotin
 
     public AbstractServer(URL url, ChannelHandler handler) throws RemotingException {
         super(url, handler);
+
+        // app model组价，又是用SPI机制，repository获取extension loader，再拿到默认实现类
         executorRepository = url.getOrDefaultApplicationModel().getExtensionLoader(ExecutorRepository.class).getDefaultExtension();
         localAddress = getUrl().toInetSocketAddress();
 
@@ -72,6 +74,8 @@ public abstract class AbstractServer extends AbstractEndpoint implements Remotin
             throw new RemotingException(url.toInetSocketAddress(), null, "Failed to bind " + getClass().getSimpleName()
                     + " on " + getLocalAddress() + ", cause: " + t.getMessage(), t);
         }
+
+        // 通过ExecutorRepository创建一个线程池出来
         executor = executorRepository.createExecutorIfAbsent(url);
     }
 

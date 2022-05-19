@@ -326,8 +326,6 @@ public class MethodConfigTest {
         Assertions.assertEquals(params, methodConfig.getParameters());
         Assertions.assertEquals(false, referenceConfig.isInit());
 
-        DubboBootstrap.getInstance().destroy();
-
     }
 
     @Test

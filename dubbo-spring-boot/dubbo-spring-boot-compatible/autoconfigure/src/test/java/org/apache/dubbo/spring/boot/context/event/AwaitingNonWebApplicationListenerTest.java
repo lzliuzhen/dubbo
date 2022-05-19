@@ -17,7 +17,6 @@
 package org.apache.dubbo.spring.boot.context.event;
 
 import org.apache.dubbo.config.bootstrap.DubboBootstrap;
-
 import org.junit.After;
 import org.junit.Before;
 

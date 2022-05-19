@@ -23,10 +23,8 @@ public class RevisionResolver {
 
     public static final String EMPTY_REVISION = "0";
 
-    private static MD5Utils md5Utils = new MD5Utils();
-
     public static String calRevision(String metadata) {
-        return md5Utils.getMd5(metadata);
+        return MD5Utils.getMd5(metadata);
     }
 
 }

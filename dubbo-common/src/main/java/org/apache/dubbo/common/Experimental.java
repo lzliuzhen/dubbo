@@ -22,7 +22,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Indicating unstable API, may get removed or changed in future releases.
+ * Indicating unstable API, may get removed or changed in the next release.
  */
 @Retention(RetentionPolicy.CLASS)
 @Target({

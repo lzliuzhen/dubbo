@@ -18,7 +18,6 @@ package org.apache.dubbo.registry.multicast;
 
 import org.apache.dubbo.common.URL;
 import org.apache.dubbo.registry.Registry;
-
 import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.CoreMatchers.is;

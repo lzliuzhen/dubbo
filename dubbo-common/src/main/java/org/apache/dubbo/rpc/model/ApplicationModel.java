@@ -34,7 +34,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -54,22 +53,33 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class ApplicationModel extends ScopeModel {
     protected static final Logger LOGGER = LoggerFactory.getLogger(ApplicationModel.class);
     public static final String NAME = "ApplicationModel";
-    private final List<ModuleModel> moduleModels = new CopyOnWriteArrayList<>();
-    private final List<ModuleModel> pubModuleModels = new CopyOnWriteArrayList<>();
+
+    // static volatile定义了一个自己的类型，static+volatile组合，定义自己的类型
+    // 单例模式
+    private static volatile ApplicationModel defaultInstance;
+    // 包含了多个module models
+    private final List<ModuleModel> moduleModels = Collections.synchronizedList(new ArrayList<>());
+    private final List<ModuleModel> pubModuleModels = Collections.synchronizedList(new ArrayList<>());
+    // 环境变量、配置信息
     private Environment environment;
+    // 服务配置相关的一些信息
     private ConfigManager configManager;
+    // 服务数据相关的一些存储
     private ServiceRepository serviceRepository;
+    // 属于application层级的一些组件的生命周期管理
     private ApplicationDeployer deployer;
-
+    // 父级组件
     private final FrameworkModel frameworkModel;
-
+    // 内部的一个module model组件
     private ModuleModel internalModule;
-
+    // 默认的一个module model组件
     private volatile ModuleModel defaultModule;
 
     // internal module index is 0, default module index is 1
     private AtomicInteger moduleIndex = new AtomicInteger(0);
+    // 是一个锁
     private Object moduleLock = new Object();
+
 
     // --------- static methods ----------//
 
@@ -81,15 +91,19 @@ public class ApplicationModel extends ScopeModel {
         }
     }
 
-    /**
-     * During destroying the default FrameworkModel, the FrameworkModel.defaultModel() or ApplicationModel.defaultModel()
-     * will return a broken model, maybe cause unpredictable problem.
-     * Recommendation: Avoid using the default model as much as possible.
-     * @return the global default ApplicationModel
-     */
+    // 走了一个double check+volatile+static，就可以实现一个单例设计模式
+    // double里大量的都是采用了这种方式来实现的单例模式
     public static ApplicationModel defaultModel() {
-        // should get from default FrameworkModel, avoid out of sync
-        return FrameworkModel.defaultModel().defaultApplication();
+        if (defaultInstance == null) {
+            synchronized (ApplicationModel.class) {
+                if (defaultInstance == null) {
+                    // 而且在这里，会给他传入 一个framework model
+                    // application model的父类，是framework model，module model->application model-> framework model，组成了一个体系
+                    defaultInstance = new ApplicationModel(FrameworkModel.defaultModel());
+                }
+            }
+        }
+        return defaultInstance;
     }
 
     /**
@@ -183,26 +197,25 @@ public class ApplicationModel extends ScopeModel {
     // only for unit test
     @Deprecated
     public static void reset() {
-        if (FrameworkModel.defaultModel().getDefaultAppModel() != null) {
-            FrameworkModel.defaultModel().getDefaultAppModel().destroy();
+        if (defaultInstance != null) {
+            defaultInstance.destroy();
+            defaultInstance = null;
         }
     }
 
     // ------------- instance methods ---------------//
 
     public ApplicationModel(FrameworkModel frameworkModel) {
-        this(frameworkModel, false);
-    }
-
-    public ApplicationModel(FrameworkModel frameworkModel, boolean isInternal) {
-        super(frameworkModel, ExtensionScope.APPLICATION, isInternal);
+        // 父级组件，就是framework model
+        super(frameworkModel, ExtensionScope.APPLICATION);
         Assert.notNull(frameworkModel, "FrameworkModel can not be null");
         this.frameworkModel = frameworkModel;
         frameworkModel.addApplication(this);
-        if (LOGGER.isInfoEnabled()) {
-            LOGGER.info(getDesc() + " is created");
-        }
         initialize();
+        // bind to default instance if absent
+        if (defaultInstance == null) {
+            defaultInstance = this;
+        }
     }
 
     @Override
@@ -211,6 +224,7 @@ public class ApplicationModel extends ScopeModel {
         internalModule = new ModuleModel(this, true);
         this.serviceRepository = new ServiceRepository(this);
 
+        // 通过SPI机制，去获取了ApplicationInitListener接口的扩展实现，回调
         ExtensionLoader<ApplicationInitListener> extensionLoader = this.getExtensionLoader(ApplicationInitListener.class);
         Set<String> listenerNames = extensionLoader.getSupportedExtensions();
         for (String listenerName : listenerNames) {
@@ -235,33 +249,34 @@ public class ApplicationModel extends ScopeModel {
 
     @Override
     protected void onDestroy() {
-        // 1. remove from frameworkModel
-        frameworkModel.removeApplication(this);
 
-        // 2. pre-destroy, set stopping
         if (deployer != null) {
-            // destroy registries and unregister services from registries first to notify consumers to stop consuming this instance.
             deployer.preDestroy();
         }
 
-        // 3. Try to destroy protocols to stop this instance from receiving new requests from connections
-        frameworkModel.tryDestroyProtocols();
-
-        // 4. destroy application resources
+        // destroy application resources
         for (ModuleModel moduleModel : new ArrayList<>(moduleModels)) {
             if (moduleModel != internalModule) {
                 moduleModel.destroy();
             }
         }
-        // 5. destroy internal module later
+        // destroy internal module later
         internalModule.destroy();
 
-        // 6. post-destroy, release registry resources
+        if (defaultInstance == this) {
+            synchronized (ApplicationModel.class) {
+                frameworkModel.removeApplication(this);
+                defaultInstance = null;
+            }
+        } else {
+            frameworkModel.removeApplication(this);
+        }
+
         if (deployer != null) {
             deployer.postDestroy();
         }
 
-        // 7. destroy other resources (e.g. ZookeeperTransporter )
+        // destroy other resources (e.g. ZookeeperTransporter )
         notifyDestroy();
 
         if (environment != null) {
@@ -276,8 +291,7 @@ public class ApplicationModel extends ScopeModel {
             serviceRepository.destroy();
             serviceRepository = null;
         }
-
-        // 8. destroy framework if none application
+        // try destroy framework if no any application
         frameworkModel.tryDestroy();
     }
 
@@ -299,6 +313,8 @@ public class ApplicationModel extends ScopeModel {
 
     public ConfigManager getApplicationConfigManager() {
         if (configManager == null) {
+            // 会通过我们之前讲解的SPI机制
+            // SPI的机制，最经典的用法，就是在这里
             configManager = (ConfigManager) this.getExtensionLoader(ApplicationExt.class)
                 .getExtension(ConfigManager.NAME);
         }
@@ -310,6 +326,7 @@ public class ApplicationModel extends ScopeModel {
     }
 
     public ExecutorRepository getApplicationExecutorRepository() {
+        // 其实每次都是通过SPI机制来获取到对应的线程池repository
         return this.getExtensionLoader(ExecutorRepository.class).getDefaultExtension();
     }
 
@@ -329,9 +346,8 @@ public class ApplicationModel extends ScopeModel {
     void addModule(ModuleModel moduleModel, boolean isInternal) {
         synchronized (moduleLock) {
             if (!this.moduleModels.contains(moduleModel)) {
-                checkDestroyed();
                 this.moduleModels.add(moduleModel);
-                moduleModel.setInternalId(buildInternalId(getInternalId(), moduleIndex.getAndIncrement()));
+                moduleModel.setInternalName(buildInternalName(ModuleModel.NAME, getInternalId(), moduleIndex.getAndIncrement()));
                 if (!isInternal) {
                     pubModuleModels.add(moduleModel);
                 }
@@ -356,12 +372,6 @@ public class ApplicationModel extends ScopeModel {
         }
     }
 
-    private void checkDestroyed() {
-        if (isDestroyed()) {
-            throw new IllegalStateException("ApplicationModel is destroyed");
-        }
-    }
-
     public List<ModuleModel> getModuleModels() {
         return Collections.unmodifiableList(moduleModels);
     }
@@ -372,6 +382,9 @@ public class ApplicationModel extends ScopeModel {
 
     public ModuleModel getDefaultModule() {
         if (defaultModule == null) {
+            if (isDestroyed()) {
+                return null;
+            }
             synchronized (moduleLock) {
                 if (defaultModule == null) {
                     defaultModule = findDefaultModule();

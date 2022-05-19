@@ -17,7 +17,6 @@
 package org.apache.dubbo.config.spring.status;
 
 import org.apache.dubbo.common.status.Status;
-
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;

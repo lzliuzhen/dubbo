@@ -26,7 +26,7 @@ import org.apache.dubbo.rpc.cluster.LoadBalance;
 import java.util.List;
 
 /**
- * AvailableClusterInvoker
+ * AvailableCluster
  *
  */
 public class AvailableClusterInvoker<T> extends AbstractClusterInvoker<T> {

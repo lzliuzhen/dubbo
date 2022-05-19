@@ -156,7 +156,7 @@ public class DecodeableRpcResult extends AppResponse implements Codec, Decodeabl
             } else {
                 returnTypes = RpcUtils.getReturnTypes(invocation);
             }
-            Object value;
+            Object value = null;
             if (ArrayUtils.isEmpty(returnTypes)) {
                 // This almost never happens?
                 value = in.readObject();

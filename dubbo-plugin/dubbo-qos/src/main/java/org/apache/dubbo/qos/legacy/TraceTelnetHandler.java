@@ -38,8 +38,8 @@ public class TraceTelnetHandler implements TelnetHandler {
     @Override
     public String telnet(Channel channel, String message) {
         String service = (String) channel.getAttribute(ChangeTelnetHandler.SERVICE_KEY);
-        if ((StringUtils.isEmpty(service))
-                && (StringUtils.isEmpty(message))) {
+        if ((service == null || service.length() == 0)
+                && (message == null || message.length() == 0)) {
             return "Please input service name, eg: \r\ntrace XxxService\r\ntrace XxxService xxxMethod\r\ntrace XxxService xxxMethod 10\r\nor \"cd XxxService\" firstly.";
         }
         String[] parts = message.split("\\s+");
@@ -54,11 +54,11 @@ public class TraceTelnetHandler implements TelnetHandler {
             method = parts.length > 0 ? parts[0] : null;
             times = parts.length > 1 ? parts[1] : "1";
         }
-        if (StringUtils.isNumber(method)) {
+        if (StringUtils.isInteger(method)) {
             times = method;
             method = null;
         }
-        if (!StringUtils.isNumber(times)) {
+        if (!StringUtils.isInteger(times)) {
             return "Illegal times " + times + ", must be integer.";
         }
         Invoker<?> invoker = null;
@@ -71,7 +71,7 @@ public class TraceTelnetHandler implements TelnetHandler {
             }
         }
         if (invoker != null) {
-            if (StringUtils.isNotEmpty(method)) {
+            if (method != null && method.length() > 0) {
                 boolean found = false;
                 for (Method m : invoker.getInterface().getMethods()) {
                     if (m.getName().equals(method)) {

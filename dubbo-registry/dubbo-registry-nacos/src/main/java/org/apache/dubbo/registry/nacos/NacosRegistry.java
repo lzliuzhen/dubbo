@@ -49,10 +49,7 @@ import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -64,16 +61,13 @@ import static org.apache.dubbo.common.constants.CommonConstants.GROUP_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.INTERFACE_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.PATH_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.PROTOCOL_KEY;
-import static org.apache.dubbo.common.constants.CommonConstants.PROVIDER_SIDE;
 import static org.apache.dubbo.common.constants.CommonConstants.VERSION_KEY;
 import static org.apache.dubbo.common.constants.RegistryConstants.CATEGORY_KEY;
 import static org.apache.dubbo.common.constants.RegistryConstants.CONFIGURATORS_CATEGORY;
 import static org.apache.dubbo.common.constants.RegistryConstants.CONSUMERS_CATEGORY;
 import static org.apache.dubbo.common.constants.RegistryConstants.DEFAULT_CATEGORY;
 import static org.apache.dubbo.common.constants.RegistryConstants.EMPTY_PROTOCOL;
-import static org.apache.dubbo.common.constants.RegistryConstants.ENABLE_EMPTY_PROTECTION_KEY;
 import static org.apache.dubbo.common.constants.RegistryConstants.PROVIDERS_CATEGORY;
-import static org.apache.dubbo.common.constants.RegistryConstants.REGISTER_CONSUMER_URL_KEY;
 import static org.apache.dubbo.common.constants.RegistryConstants.ROUTERS_CATEGORY;
 import static org.apache.dubbo.registry.Constants.ADMIN_PROTOCOL;
 import static org.apache.dubbo.registry.nacos.NacosServiceName.NAME_SEPARATOR;
@@ -134,10 +128,14 @@ public class NacosRegistry extends FailbackRegistry {
      */
     private volatile ScheduledExecutorService scheduledExecutorService;
 
-    private final ConcurrentMap<URL, ConcurrentMap<NotifyListener, ConcurrentMap<String, EventListener>>> nacosListeners = new ConcurrentHashMap<>();
-
     public NacosRegistry(URL url, NacosNamingServiceWrapper namingService) {
         super(url);
+        // NamingService，就是类似于ZookeeperClient，他其实就是代表了nacos注册中心提供出来的客户端的API
+        // 通过这套客户端API，直接就可以跟nacos服务端进行交互，在这个交互过程中，就可以实现服务注册、下线、订阅、回调通知
+        // zookeeper，他是一个通用的分布式协调系统，他不是专门服务于注册中心这块的
+        // 基于zk实现注册中心的话，主要是基于zk提供的一些功能去间接的实现，他不是直接实现的
+        // nacos，他的定位就是一个注册中心，所以他是自己直接实现了注册中心的核心功能的，我们就直接用他的功能就可以了
+        // 他底层，他的客户端也是一样的，会跟服务端之间建立网络连接，就可以通过这个网络连接发送请求执行对应的操作
         this.namingService = namingService;
     }
 
@@ -168,20 +166,22 @@ public class NacosRegistry extends FailbackRegistry {
     @Override
     public void doRegister(URL url) {
         try {
-            if (PROVIDER_SIDE.equals(url.getSide()) || getUrl().getParameter(REGISTER_CONSUMER_URL_KEY, false)) {
-                String serviceName = getServiceName(url);
-                Instance instance = createInstance(url);
-                /**
-                 *  namingService.registerInstance with {@link org.apache.dubbo.registry.support.AbstractRegistry#registryUrl}
-                 *  default {@link DEFAULT_GROUP}
-                 *
-                 * in https://github.com/apache/dubbo/issues/5978
-                 */
-                namingService.registerInstance(serviceName,
-                    getUrl().getGroup(Constants.DEFAULT_GROUP), instance);
-            } else {
-                logger.info("Please set 'dubbo.registry.parameters.register-consumer-url=true' to turn on consumer url registration.");
-            }
+            // 他会从url里面，url是consumer端的url，里面看到过，会封装我们的服务接口的名称的
+            // 注册，provider应该是先去执行注册的，url也可以是provider url
+            String serviceName = getServiceName(url);
+            // 通过url再去创建一个Instance概念，服务实例的概念，这个服务实例，代表的应该是我们的provider服务实例
+            Instance instance = createInstance(url);
+            /**
+             *  namingService.registerInstance with {@link org.apache.dubbo.registry.support.AbstractRegistry#registryUrl}
+             *  default {@link DEFAULT_GROUP}
+             *
+             * in https://github.com/apache/dubbo/issues/5978
+             */
+            // 直接调用nacos的客户端的API，注册服务实例，他在底层肯定会对你的服务实例对象进行序列化
+            // 通过底层的网络协议和网络通信，把服务实例传输给你的nacos服务端就可以了
+            // TCP自定义协议，HTTP协议都是很容易就可以做到的
+            namingService.registerInstance(serviceName,
+                getUrl().getGroup(Constants.DEFAULT_GROUP), instance);
         } catch (Throwable cause) {
             throw new RpcException("Failed to register " + url + " to nacos " + getUrl() + ", cause: " + cause.getMessage(), cause);
         }
@@ -230,6 +230,7 @@ public class NacosRegistry extends FailbackRegistry {
                  * in https://github.com/apache/dubbo/issues/5978
                  */
                 for (String serviceName : serviceNames) {
+                    // 通过调用你的nacos的NamingService.getAllInstances，获取到一批服务实例
                     List<Instance> instances = namingService.getAllInstances(serviceName,
                         getUrl().getGroup(Constants.DEFAULT_GROUP));
                     NacosInstanceManageUtil.initOrRefreshServiceInstanceList(serviceName, instances);
@@ -503,10 +504,9 @@ public class NacosRegistry extends FailbackRegistry {
     }
 
     private List<URL> toUrlWithEmpty(URL consumerURL, Collection<Instance> instances) {
+        // 这个方法是他自己实现的，并没有使用CacheableFailbackRegistry
         List<URL> urls = buildURLs(consumerURL, instances);
-        // Nacos does not support configurators and routers from registry, so all notifications are of providers type.
-        if (urls.size() == 0 && !getUrl().getParameter(ENABLE_EMPTY_PROTECTION_KEY, true)) {
-            logger.warn("Received empty url address list and empty protection is disabled, will clear current available addresses");
+        if (urls.size() == 0) {
             URL empty = URLBuilder.from(consumerURL)
                 .setProtocol(EMPTY_PROTOCOL)
                 .addParameter(CATEGORY_KEY, DEFAULT_CATEGORY)
@@ -531,15 +531,12 @@ public class NacosRegistry extends FailbackRegistry {
 
     private void subscribeEventListener(String serviceName, final URL url, final NotifyListener listener)
         throws NacosException {
-        ConcurrentMap<NotifyListener, ConcurrentMap<String, EventListener>> listeners = nacosListeners.computeIfAbsent(url,
-            k -> new ConcurrentHashMap<>());
-
-        ConcurrentMap<String, EventListener> eventListeners = listeners.computeIfAbsent(listener,
-            k -> new ConcurrentHashMap<>());
-
-        EventListener eventListener = eventListeners.computeIfAbsent(serviceName,
-            k -> new RegistryChildListenerImpl(serviceName, url, listener));
-
+        // 封装一个Listener
+        EventListener eventListener = new RegistryChildListenerImpl(serviceName, url, listener);
+        // 走一个nacos的NamingService去执行订阅操作
+        // 在这个底层，他必然会发送订阅请求给nacos server，nacos server端就会对指定的service name去施加监听
+        // 施加了监听之后，此时就会在服务实例变动的时候，把地址列表反过来推送回来
+        // 回调对应的listener监听器
         namingService.subscribe(serviceName,
             getUrl().getGroup(Constants.DEFAULT_GROUP),
             eventListener);
@@ -558,7 +555,9 @@ public class NacosRegistry extends FailbackRegistry {
             //  Instances
             filterEnabledInstances(enabledInstances);
         }
+        // 在这里，也是需要把raw url转为对应的URL
         List<URL> urls = toUrlWithEmpty(url, enabledInstances);
+        // 走notify机制
         NacosRegistry.this.notify(url, listener, urls);
     }
 
@@ -635,19 +634,10 @@ public class NacosRegistry extends FailbackRegistry {
     }
 
     private class RegistryChildListenerImpl implements EventListener {
-        private final RegistryNotifier notifier;
-
-        private final String serviceName;
-
-        private final URL consumerUrl;
-
-        private final NotifyListener listener;
+        private RegistryNotifier notifier;
 
         public RegistryChildListenerImpl(String serviceName, URL consumerUrl, NotifyListener listener) {
-            this.serviceName = serviceName;
-            this.consumerUrl = consumerUrl;
-            this.listener = listener;
-            this.notifier = new RegistryNotifier(getUrl(), NacosRegistry.this.getDelay()) {
+            notifier = new RegistryNotifier(getUrl(), NacosRegistry.this.getDelay()) {
                 @Override
                 protected void doNotify(Object rawAddresses) {
                     List<Instance> instances = (List<Instance>) rawAddresses;
@@ -670,23 +660,6 @@ public class NacosRegistry extends FailbackRegistry {
                 NamingEvent e = (NamingEvent) event;
                 notifier.notify(e.getInstances());
             }
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) {
-                return true;
-            }
-            if (o == null || getClass() != o.getClass()) {
-                return false;
-            }
-            RegistryChildListenerImpl that = (RegistryChildListenerImpl) o;
-            return Objects.equals(serviceName, that.serviceName) && Objects.equals(consumerUrl, that.consumerUrl) && Objects.equals(listener, that.listener);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(serviceName, consumerUrl, listener);
         }
     }
 

@@ -17,14 +17,13 @@
 package org.apache.dubbo.registry.client;
 
 import org.apache.dubbo.common.URL;
-import org.apache.dubbo.metadata.AbstractServiceNameMapping;
 import org.apache.dubbo.metadata.ServiceNameMapping;
+import org.apache.dubbo.metadata.WritableMetadataService;
 import org.apache.dubbo.registry.NotifyListener;
 import org.apache.dubbo.registry.client.event.listener.MockServiceInstancesChangedListener;
 import org.apache.dubbo.registry.client.event.listener.ServiceInstancesChangedListener;
 import org.apache.dubbo.rpc.model.ApplicationModel;
 import org.apache.dubbo.rpc.model.FrameworkModel;
-
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,8 +37,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 
 import static org.apache.dubbo.common.constants.CommonConstants.CHECK_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.DUBBO;
@@ -49,6 +46,7 @@ import static org.apache.dubbo.metadata.ServiceNameMapping.toStringKeys;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
@@ -65,11 +63,9 @@ public class ServiceDiscoveryRegistryTest {
     public static final String APP_NAME2 = "app2";
     public static final String APP_NAME3 = "app3";
 
-    private static AbstractServiceNameMapping mapping = mock(AbstractServiceNameMapping.class);
-    private static Lock lock = new ReentrantLock();
-
+    private static ServiceNameMapping mapping = mock(ServiceNameMapping.class);
     private static URL registryURL = URL.valueOf("zookeeper://127.0.0.1:2181/org.apache.dubbo.registry.RegistryService");
-    private static URL url = URL.valueOf("consumer://127.0.0.1/TestService?interface=TestService1&check=false&protocol=dubbo");
+    private static URL url = URL.valueOf("consumer://127.0.0.1/TestService?interface=TestService1&check=false");
     private static NotifyListener testServiceListener = mock(NotifyListener.class);
 
     private static List<ServiceInstance> instanceList1 = new ArrayList<>();
@@ -78,7 +74,7 @@ public class ServiceDiscoveryRegistryTest {
     private ServiceDiscoveryRegistry serviceDiscoveryRegistry;
     private ServiceDiscovery serviceDiscovery;
     private MockServiceInstancesChangedListener instanceListener;
-    private ServiceNameMapping serviceNameMapping;
+    private WritableMetadataService spiedMetadataService;
 
     @BeforeAll
     public static void setUp() {
@@ -103,60 +99,58 @@ public class ServiceDiscoveryRegistryTest {
         doNothing().when(instanceListener).onEvent(any());
         when(serviceDiscovery.createListener(any())).thenReturn(instanceListener);
         when(serviceDiscovery.getInstances(any())).thenReturn(Collections.emptyList());
-        when(serviceDiscovery.getUrl()).thenReturn(url);
         ApplicationModel applicationModel = spy(ApplicationModel.defaultModel());
         when(applicationModel.getDefaultExtension(ServiceNameMapping.class)).thenReturn(mapping);
         registryURL = registryURL.setScopeModel(applicationModel);
 
-        serviceDiscoveryRegistry = new ServiceDiscoveryRegistry(registryURL, serviceDiscovery, mapping);
-        when(mapping.getMappingLock(any())).thenReturn(lock);
-        when(testServiceListener.getConsumerUrl()).thenReturn(url);
+        spiedMetadataService = spy(WritableMetadataService.getDefaultExtension(ApplicationModel.defaultModel()));
+        serviceDiscoveryRegistry = new ServiceDiscoveryRegistry(registryURL, serviceDiscovery, spiedMetadataService);
     }
 
     /**
      * Test subscribe
      * - Normal case
-     * - Exceptional case
-     *   - check=true
-     *   - check=false
+     * - Exception case
+     * - check=true
+     * - check=false
      */
     @Test
     public void testDoSubscribe() {
         ApplicationModel applicationModel = spy(ApplicationModel.defaultModel());
         when(applicationModel.getDefaultExtension(ServiceNameMapping.class)).thenReturn(mapping);
-        // Exceptional case, no interface-app mapping found
-        when(mapping.getAndListen(any(), any(), any())).thenReturn(Collections.emptySet());
+        // Exception case, no interface-app mapping found
+        when(mapping.getAndListenServices(any(), any(), any())).thenReturn(Collections.emptySet());
         // when check = false
         try {
             registryURL = registryURL.setScopeModel(applicationModel);
-            serviceDiscoveryRegistry = new ServiceDiscoveryRegistry(registryURL, serviceDiscovery, mapping);
+            serviceDiscoveryRegistry = new ServiceDiscoveryRegistry(registryURL, serviceDiscovery, spiedMetadataService);
             serviceDiscoveryRegistry.doSubscribe(url, testServiceListener);
         } finally {
             registryURL = registryURL.setScopeModel(null);
-            serviceDiscoveryRegistry.unsubscribe(url, testServiceListener);
+            spiedMetadataService.unsubscribeURL(url);
         }
-//        // when check = true
+        // when check = true
         URL checkURL = url.addParameter(CHECK_KEY, true);
-//        Exception exceptionShouldHappen = null;
-//        try {
-//            serviceDiscoveryRegistry.doSubscribe(checkURL, testServiceListener);
-//        } catch (IllegalStateException e) {
-//            exceptionShouldHappen = e;
-//        } finally {
-//            serviceDiscoveryRegistry.unsubscribe(checkURL, testServiceListener);
-//        }
-//        if (exceptionShouldHappen == null) {
-//            fail();
-//        }
+        Exception exceptionShouldHappen = null;
+        try {
+            serviceDiscoveryRegistry.doSubscribe(checkURL, testServiceListener);
+        } catch (IllegalStateException e) {
+            exceptionShouldHappen = e;
+        } finally {
+            spiedMetadataService.unsubscribeURL(checkURL);
+        }
+        if (exceptionShouldHappen == null) {
+            fail();
+        }
 
         // Normal case
         Set<String> singleApp = new HashSet<>();
         singleApp.add(APP_NAME1);
-        when(mapping.getAndListen(any(), any(), any())).thenReturn(singleApp);
+        when(mapping.getAndListenServices(any(), any(), any())).thenReturn(singleApp);
         try {
             serviceDiscoveryRegistry.doSubscribe(checkURL, testServiceListener);
         } finally {
-            serviceDiscoveryRegistry.unsubscribe(checkURL, testServiceListener);
+            spiedMetadataService.unsubscribeURL(checkURL);
         }
     }
 
@@ -208,22 +202,19 @@ public class ServiceDiscoveryRegistryTest {
 
         // different interface mapping to the same apps
         NotifyListener testServiceListener2 = mock(NotifyListener.class);
-        URL url2 = URL.valueOf("tri://127.0.0.1/TestService2?interface=TestService2&check=false&protocol=tri");
-        when(testServiceListener2.getConsumerUrl()).thenReturn(url2);
+        URL url2 = URL.valueOf("consumer://127.0.0.1/TestService2?interface=TestService1&check=false&protocol=tri");
         serviceDiscoveryRegistry.subscribeURLs(url2, testServiceListener2, multiApps);
         // check instance listeners not changed, methods not called
         assertEquals(2, serviceDiscoveryRegistry.getServiceListeners().size());
         assertEquals(multiAppsInstanceListener, serviceDiscoveryRegistry.getServiceListeners().get(toStringKeys(multiApps)));
         verify(multiAppsInstanceListener, times(1)).addListenerAndNotify(any(), eq(testServiceListener));
         // still called once, not executed this time
-        verify(serviceDiscovery, times(2)).addServiceInstancesChangedListener(multiAppsInstanceListener);
+        verify(serviceDiscovery, times(1)).addServiceInstancesChangedListener(multiAppsInstanceListener);
         // check different protocol
-        Map<String, Set<ServiceInstancesChangedListener.NotifyListenerWithKey>> serviceListeners = multiAppsInstanceListener.getServiceListeners();
+        Map<String, Set<NotifyListener>> serviceListeners = multiAppsInstanceListener.getServiceListeners();
         assertEquals(2, serviceListeners.size());
-        assertEquals(1, serviceListeners.get(url.getProtocolServiceKey()).size());
-        assertEquals(1, serviceListeners.get(url2.getProtocolServiceKey()).size());
         String protocolServiceKey = url2.getServiceKey() + GROUP_CHAR_SEPARATOR + url2.getParameter(PROTOCOL_KEY, DUBBO);
-        assertTrue(serviceListeners.get(url2.getProtocolServiceKey()).contains(new ServiceInstancesChangedListener.NotifyListenerWithKey(protocolServiceKey, testServiceListener2)));
+        assertTrue(serviceListeners.get(protocolServiceKey).contains(testServiceListener2));
     }
 
     /**
@@ -242,18 +233,18 @@ public class ServiceDiscoveryRegistryTest {
         multiApps.add(APP_NAME2);
         NotifyListener testServiceListener2 = mock(NotifyListener.class);
         URL url2 = URL.valueOf("consumer://127.0.0.1/TestService2?interface=TestService1&check=false&protocol=tri");
-        when(testServiceListener2.getConsumerUrl()).thenReturn(url2);
         serviceDiscoveryRegistry.subscribeURLs(url, testServiceListener, multiApps);
         serviceDiscoveryRegistry.subscribeURLs(url2, testServiceListener2, multiApps);
         assertEquals(1, serviceDiscoveryRegistry.getServiceListeners().size());
 
         // do unsubscribe
-        when(mapping.getCachedMapping(url2)).thenReturn(multiApps);
+        when(spiedMetadataService.getCachedMapping(url2)).thenReturn(multiApps);
         serviceDiscoveryRegistry.doUnsubscribe(url2, testServiceListener2);
+        assertEquals(1, serviceDiscoveryRegistry.getServiceListeners().size());
         assertEquals(1, serviceDiscoveryRegistry.getServiceListeners().size());
         ServiceInstancesChangedListener instancesChangedListener = serviceDiscoveryRegistry.getServiceListeners().entrySet().iterator().next().getValue();
         assertTrue(instancesChangedListener.hasListeners());
-        when(mapping.getCachedMapping(url)).thenReturn(multiApps);
+        when(spiedMetadataService.getCachedMapping(url)).thenReturn(multiApps);
         serviceDiscoveryRegistry.doUnsubscribe(url, testServiceListener);
         assertEquals(0, serviceDiscoveryRegistry.getServiceListeners().size());
         assertFalse(instancesChangedListener.hasListeners());

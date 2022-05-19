@@ -40,6 +40,7 @@ public class RpcStatus {
 
     private final ConcurrentMap<String, Object> values = new ConcurrentHashMap<String, Object>();
 
+    // 就是说针对每个接口的方法他有对应的统计状态数据
     private final AtomicInteger active = new AtomicInteger();
     private final AtomicLong total = new AtomicLong();
     private final AtomicInteger failed = new AtomicInteger();
@@ -99,7 +100,7 @@ public class RpcStatus {
      * @param url
      */
     public static boolean beginCount(URL url, String methodName, int max) {
-        max = (max <= 0) ? Integer.MAX_VALUE : max;
+        max = (max <= 0) ? Integer.MAX_VALUE : max; // 默认不设置这个限制，直接max就是一个Integer最大值
         RpcStatus appStatus = getStatus(url);
         RpcStatus methodStatus = getStatus(url, methodName);
         if (methodStatus.active.get() == Integer.MAX_VALUE) {
@@ -112,6 +113,7 @@ public class RpcStatus {
                 return false;
             }
 
+            // 通过CAS操作，去做无锁化的线程安全的递增操作
             if (methodStatus.active.compareAndSet(i, i + 1)) {
                 break;
             }

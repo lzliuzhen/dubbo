@@ -23,8 +23,11 @@ import org.apache.dubbo.rpc.cluster.router.mesh.rule.virtualservice.VirtualServi
 import java.util.LinkedList;
 import java.util.List;
 
-
+// 这个东西，本身就代表了我们之前看到的那些配置信息
+// 用文本字符串编写的配置信息，此时这些配置被反向推送过来以后
+// 就会解析和转换为我们的VsDestinationGroup
 public class VsDestinationGroup {
+
     private String appName;
     private List<VirtualServiceRule> virtualServiceRuleList = new LinkedList<>();
     private List<DestinationRule> destinationRuleList = new LinkedList<>();
@@ -51,9 +54,5 @@ public class VsDestinationGroup {
 
     public void setDestinationRuleList(List<DestinationRule> destinationRuleList) {
         this.destinationRuleList = destinationRuleList;
-    }
-
-    public boolean isValid() {
-        return virtualServiceRuleList.size() > 0 && destinationRuleList.size() > 0;
     }
 }

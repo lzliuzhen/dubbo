@@ -17,7 +17,6 @@
 package org.apache.dubbo.config;
 
 import org.apache.dubbo.config.support.Parameter;
-import org.apache.dubbo.rpc.model.ModuleModel;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -27,6 +26,7 @@ import static org.apache.dubbo.common.constants.CommonConstants.EXPORT_THREAD_NU
 
 /**
  * The service provider default configuration
+ * provider服务实例，他对应的一些默认的配置
  *
  * @export
  * @see org.apache.dubbo.config.ProtocolConfig
@@ -40,11 +40,13 @@ public class ProviderConfig extends AbstractServiceConfig {
 
     /**
      * Service ip addresses (used when there are multiple network cards available)
+     * 你的provider服务实例所在的地址
      */
     private String host;
 
     /**
      * Service port
+     * 你的provider服务实例暴露出去对外提供服务的端口号
      */
     private Integer port;
 
@@ -65,6 +67,7 @@ public class ProviderConfig extends AbstractServiceConfig {
 
     /**
      * Thread pool size (fixed size)
+     * dubbo nettyserver的线程模型，我们之前都是看到过的
      */
     private Integer threads;
 
@@ -119,7 +122,7 @@ public class ProviderConfig extends AbstractServiceConfig {
     private String exchanger;
 
     /**
-     * Thread dispatching mode
+     * Thread dispatching mode，对于各种网络事件，是采用什么策略分发给业务线程池
      */
     private String dispatcher;
 
@@ -170,13 +173,6 @@ public class ProviderConfig extends AbstractServiceConfig {
      * @see ModuleConfig#setBackground(Boolean)
      */
     private Boolean exportBackground;
-
-    public ProviderConfig() {
-    }
-
-    public ProviderConfig(ModuleModel moduleModel) {
-        super(moduleModel);
-    }
 
     @Deprecated
     public void setProtocol(String protocol) {
@@ -351,6 +347,41 @@ public class ProviderConfig extends AbstractServiceConfig {
         this.status = status;
     }
 
+    @Override
+    public String getCluster() {
+        return super.getCluster();
+    }
+
+    @Override
+    public Integer getConnections() {
+        return super.getConnections();
+    }
+
+    @Override
+    public Integer getTimeout() {
+        return super.getTimeout();
+    }
+
+    @Override
+    public Integer getRetries() {
+        return super.getRetries();
+    }
+
+    @Override
+    public String getLoadbalance() {
+        return super.getLoadbalance();
+    }
+
+    @Override
+    public Boolean isAsync() {
+        return super.isAsync();
+    }
+
+    @Override
+    public Integer getActives() {
+        return super.getActives();
+    }
+
     public String getTransporter() {
         return transporter;
     }
@@ -444,4 +475,35 @@ public class ProviderConfig extends AbstractServiceConfig {
         this.exportBackground = exportBackground;
     }
 
+    @Override
+    public String toString() {
+        final StringBuilder sb = new StringBuilder("ProviderConfig{");
+        sb.append("host='").append(host).append('\'');
+        sb.append(", port=").append(port);
+        sb.append(", contextpath='").append(contextpath).append('\'');
+        sb.append(", threadpool='").append(threadpool).append('\'');
+        sb.append(", threadname='").append(threadname).append('\'');
+        sb.append(", threads=").append(threads);
+        sb.append(", iothreads=").append(iothreads);
+        sb.append(", alive=").append(alive);
+        sb.append(", queues=").append(queues);
+        sb.append(", accepts=").append(accepts);
+        sb.append(", codec='").append(codec).append('\'');
+        sb.append(", charset='").append(charset).append('\'');
+        sb.append(", payload=").append(payload);
+        sb.append(", buffer=").append(buffer);
+        sb.append(", transporter='").append(transporter).append('\'');
+        sb.append(", exchanger='").append(exchanger).append('\'');
+        sb.append(", dispatcher='").append(dispatcher).append('\'');
+        sb.append(", networker='").append(networker).append('\'');
+        sb.append(", server='").append(server).append('\'');
+        sb.append(", client='").append(client).append('\'');
+        sb.append(", telnet='").append(telnet).append('\'');
+        sb.append(", prompt='").append(prompt).append('\'');
+        sb.append(", status='").append(status).append('\'');
+        sb.append(", wait=").append(wait);
+        sb.append(", isDefault=").append(isDefault);
+        sb.append('}');
+        return sb.toString();
+    }
 }

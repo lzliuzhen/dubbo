@@ -27,14 +27,13 @@ import static org.apache.dubbo.common.constants.CommonConstants.REGISTRY_DELAY_N
  *
  * @see org.apache.dubbo.registry.RegistryFactory#getRegistry(URL)
  * @see org.apache.dubbo.registry.support.AbstractRegistry
+ *
+ * 这块接口是很轻薄，没有什么东西在里面，我们主要是看他的父接口
+ *
  */
 public interface Registry extends Node, RegistryService {
     default int getDelay() {
         return getUrl().getParameter(REGISTRY_DELAY_NOTIFICATION_KEY, DEFAULT_DELAY_NOTIFICATION_TIME);
-    }
-
-    default boolean isServiceDiscovery() {
-        return false;
     }
 
     default void reExportRegister(URL url) {

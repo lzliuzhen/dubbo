@@ -19,8 +19,6 @@ package org.apache.dubbo.config.spring;
 import org.apache.dubbo.common.config.ConfigurationUtils;
 import org.apache.dubbo.common.utils.StringUtils;
 import org.apache.dubbo.config.ConfigCenterConfig;
-import org.apache.dubbo.rpc.model.ApplicationModel;
-
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
@@ -42,13 +40,6 @@ public class ConfigCenterBean extends ConfigCenterConfig implements ApplicationC
     private transient ApplicationContext applicationContext;
 
     private Boolean includeSpringEnv = false;
-
-    public ConfigCenterBean() {
-    }
-
-    public ConfigCenterBean(ApplicationModel applicationModel) {
-        super(applicationModel);
-    }
 
     @Override
     public void setApplicationContext(ApplicationContext applicationContext) {

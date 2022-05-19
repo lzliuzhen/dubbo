@@ -18,13 +18,11 @@ package org.apache.dubbo.config;
 
 import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.Version;
-import org.apache.dubbo.common.constants.CommonConstants;
 import org.apache.dubbo.common.constants.RegistryConstants;
 import org.apache.dubbo.common.extension.ExtensionLoader;
 import org.apache.dubbo.common.logger.Logger;
 import org.apache.dubbo.common.logger.LoggerFactory;
 import org.apache.dubbo.common.url.component.ServiceConfigURL;
-import org.apache.dubbo.common.utils.ArrayUtils;
 import org.apache.dubbo.common.utils.CollectionUtils;
 import org.apache.dubbo.common.utils.ConfigUtils;
 import org.apache.dubbo.common.utils.NetUtils;
@@ -33,7 +31,6 @@ import org.apache.dubbo.common.utils.UrlUtils;
 import org.apache.dubbo.config.annotation.Reference;
 import org.apache.dubbo.config.support.Parameter;
 import org.apache.dubbo.config.utils.ConfigValidationUtils;
-import org.apache.dubbo.metadata.ServiceNameMapping;
 import org.apache.dubbo.registry.client.metadata.MetadataUtils;
 import org.apache.dubbo.rpc.Invoker;
 import org.apache.dubbo.rpc.Protocol;
@@ -42,15 +39,14 @@ import org.apache.dubbo.rpc.cluster.Cluster;
 import org.apache.dubbo.rpc.cluster.directory.StaticDirectory;
 import org.apache.dubbo.rpc.cluster.support.ClusterUtils;
 import org.apache.dubbo.rpc.cluster.support.registry.ZoneAwareCluster;
+import org.apache.dubbo.rpc.model.ApplicationModel;
 import org.apache.dubbo.rpc.model.AsyncMethodInfo;
 import org.apache.dubbo.rpc.model.ConsumerModel;
-import org.apache.dubbo.rpc.model.ModuleModel;
 import org.apache.dubbo.rpc.model.ModuleServiceRepository;
 import org.apache.dubbo.rpc.model.ScopeModel;
 import org.apache.dubbo.rpc.model.ServiceDescriptor;
 import org.apache.dubbo.rpc.protocol.injvm.InjvmProtocol;
 import org.apache.dubbo.rpc.service.GenericService;
-import org.apache.dubbo.rpc.stub.StubSuppliers;
 import org.apache.dubbo.rpc.support.ProtocolUtils;
 
 import java.util.ArrayList;
@@ -68,9 +64,11 @@ import static org.apache.dubbo.common.constants.CommonConstants.COMMA_SEPARATOR_
 import static org.apache.dubbo.common.constants.CommonConstants.CONSUMER_SIDE;
 import static org.apache.dubbo.common.constants.CommonConstants.INTERFACE_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.LOCALHOST_VALUE;
+import static org.apache.dubbo.common.constants.CommonConstants.METADATA_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.METHODS_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.MONITOR_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.PROXY_CLASS_REF;
+import static org.apache.dubbo.common.constants.CommonConstants.REMOTE_METADATA_STORAGE_TYPE;
 import static org.apache.dubbo.common.constants.CommonConstants.REVISION_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.SEMICOLON_SPLIT_PATTERN;
 import static org.apache.dubbo.common.constants.CommonConstants.SIDE_KEY;
@@ -80,7 +78,6 @@ import static org.apache.dubbo.common.utils.StringUtils.splitToSet;
 import static org.apache.dubbo.config.Constants.DUBBO_IP_TO_REGISTRY;
 import static org.apache.dubbo.registry.Constants.CONSUMER_PROTOCOL;
 import static org.apache.dubbo.registry.Constants.REGISTER_IP_KEY;
-import static org.apache.dubbo.rpc.Constants.GENERIC_KEY;
 import static org.apache.dubbo.rpc.Constants.LOCAL_PROTOCOL;
 import static org.apache.dubbo.rpc.cluster.Constants.PEER_KEY;
 import static org.apache.dubbo.rpc.cluster.Constants.REFER_KEY;
@@ -104,8 +101,8 @@ public class ReferenceConfig<T> extends ReferenceConfigBase<T> {
      * <li>when the url is dubbo://224.5.6.7:1234/org.apache.dubbo.config.api.DemoService?application=dubbo-sample, then
      * the protocol is <b>DubboProtocol</b></li>
      * <p>
-     * Actually，when the {@link ExtensionLoader} init the {@link Protocol} instants,it will automatically wrap three
-     * layers, and eventually will get a <b>ProtocolSerializationWrapper</b> or <b>ProtocolFilterWrapper</b> or <b>ProtocolListenerWrapper</b>
+     * Actually，when the {@link ExtensionLoader} init the {@link Protocol} instants,it will automatically wraps two
+     * layers, and eventually will get a <b>ProtocolFilterWrapper</b> or <b>ProtocolListenerWrapper</b>
      */
     private Protocol protocolSPI;
 
@@ -148,16 +145,8 @@ public class ReferenceConfig<T> extends ReferenceConfigBase<T> {
         super();
     }
 
-    public ReferenceConfig(ModuleModel moduleModel) {
-        super(moduleModel);
-    }
-
     public ReferenceConfig(Reference reference) {
         super(reference);
-    }
-
-    public ReferenceConfig(ModuleModel moduleModel, Reference reference) {
-        super(moduleModel, reference);
     }
 
     @Override
@@ -205,20 +194,13 @@ public class ReferenceConfig<T> extends ReferenceConfigBase<T> {
     }
 
     @Override
-    public T get() {
+    public synchronized T get() {
         if (destroyed) {
             throw new IllegalStateException("The invoker of ReferenceConfig(" + url + ") has already destroyed!");
         }
 
         if (ref == null) {
-            // ensure start module, compatible with old api usage
-            getScopeModel().getDeployer().start();
-
-            synchronized (this) {
-                if (ref == null) {
-                    init();
-                }
-            }
+            init();
         }
 
         return ref;
@@ -244,37 +226,39 @@ public class ReferenceConfig<T> extends ReferenceConfigBase<T> {
             ModuleServiceRepository repository = getScopeModel().getServiceRepository();
             repository.unregisterConsumer(consumerModel);
         }
+        getScopeModel().getConfigManager().removeConfig(this);
     }
 
     protected synchronized void init() {
         if (initialized) {
             return;
         }
-        initialized = true;
+
+        // model组件体系
+        if (getScopeModel() == null) {
+            setScopeModel(ApplicationModel.defaultModel().getDefaultModule());
+        }
+
+        // prepare application for reference
+        // 基于model组件的Deployer进行一个初始化和准备工作，prepare，refresh
+        getScopeModel().getDeployer().prepare();
 
         if (!this.isRefreshed()) {
             this.refresh();
         }
 
-        // init serviceMetadata
+        //init serviceMetadata
+        // 对metadata元数据进行一定的初始化以及存储，注册等一系列的操作
+        // 封装csonmer model，就是把consumer的数据，封装起来，放到对应的repository里面去
         initServiceMetadata(consumer);
-
         serviceMetadata.setServiceType(getServiceInterfaceClass());
         // TODO, uncomment this line once service key is unified
         serviceMetadata.setServiceKey(URL.buildKey(interfaceName, group, version));
 
         Map<String, String> referenceParameters = appendConfig();
-        // init service-application mapping
-        initServiceAppsMapping(referenceParameters);
 
         ModuleServiceRepository repository = getScopeModel().getServiceRepository();
-        ServiceDescriptor serviceDescriptor;
-        if (CommonConstants.NATIVE_STUB.equals(getProxy())) {
-            serviceDescriptor = StubSuppliers.getServiceDescriptor(interfaceName);
-            repository.registerService(serviceDescriptor);
-        } else {
-            serviceDescriptor = repository.registerService(interfaceClass);
-        }
+        ServiceDescriptor serviceDescriptor = repository.registerService(interfaceClass);
         consumerModel = new ConsumerModel(serviceMetadata.getServiceKey(), proxy, serviceDescriptor, this,
             getScopeModel(), serviceMetadata, createAsyncMethodInfo());
 
@@ -282,21 +266,21 @@ public class ReferenceConfig<T> extends ReferenceConfigBase<T> {
 
         serviceMetadata.getAttachments().putAll(referenceParameters);
 
+        // 主要就是构建整个代理的主入口
         ref = createProxy(referenceParameters);
 
+        // 创建完了动态代理之后，就会把这个代理设置给service metadata以及consumer model
         serviceMetadata.setTarget(ref);
         serviceMetadata.addAttribute(PROXY_CLASS_REF, ref);
 
         consumerModel.setProxyObject(ref);
         consumerModel.initMethodModels();
 
-        checkInvokerAvailable();
-    }
+        initialized = true;
 
-    private void initServiceAppsMapping(Map<String, String> referenceParameters) {
-        ServiceNameMapping serviceNameMapping = ServiceNameMapping.getDefaultExtension(getScopeModel());
-        URL url = new ServiceConfigURL(LOCAL_PROTOCOL, LOCALHOST_VALUE, 0, interfaceName, referenceParameters);
-        serviceNameMapping.initInterfaceAppMapping(url);
+        // 在这里做一下你的目标服务实例集群是否可用的检查，当consumer启动的时候
+        // 构建invoker体系，directory进行服务发现，构建了dubbo invoker，网络连接
+        checkInvokerAvailable();
     }
 
     /**
@@ -334,7 +318,7 @@ public class ReferenceConfig<T> extends ReferenceConfigBase<T> {
 
         if (!ProtocolUtils.isGeneric(generic)) {
             String revision = Version.getVersion(interfaceClass, version);
-            if (StringUtils.isNotEmpty(revision)) {
+            if (revision != null && revision.length() > 0) {
                 map.put(REVISION_KEY, revision);
             }
 
@@ -352,6 +336,11 @@ public class ReferenceConfig<T> extends ReferenceConfigBase<T> {
         AbstractConfig.appendParameters(map, consumer);
         AbstractConfig.appendParameters(map, this);
         appendMetricsCompatible(map);
+
+        MetadataReportConfig metadataReportConfig = getMetadataReportConfig();
+        if (metadataReportConfig != null && metadataReportConfig.isValid()) {
+            map.putIfAbsent(METADATA_KEY, REMOTE_METADATA_STORAGE_TYPE);
+        }
 
         String hostToRegistry = ConfigUtils.getSystemProperty(DUBBO_IP_TO_REGISTRY);
         if (StringUtils.isEmpty(hostToRegistry)) {
@@ -381,11 +370,15 @@ public class ReferenceConfig<T> extends ReferenceConfigBase<T> {
 
     @SuppressWarnings({"unchecked"})
     private T createProxy(Map<String, String> referenceParameters) {
+        // 因为我们之前看到过provider那一端有一个本地发布的概念
+        // 就是把我们的目标实现类，封装成搞一个proxy invoker，然后再通过injvm protocol发布出去
+        // 把proxy invoker封装成injvm exporter
+        // 如果说要是针对本地发布出去的provider服务实例，要在同一个jvm里进行本地调用，consumer
         if (shouldJvmRefer(referenceParameters)) {
-            createInvokerForLocal(referenceParameters);
+            createInvokerForLocal(referenceParameters); // 如果说本地发布，就是这么一回事，跟我们之前看过的本地发布的代码就完全匹配上了
         } else {
             urls.clear();
-            if (StringUtils.isNotEmpty(url)) {
+            if (url != null && url.length() > 0) {
                 // user specified URL, could be peer-to-peer address, or register center's address.
                 parseUrl(referenceParameters);
             } else {
@@ -394,22 +387,24 @@ public class ReferenceConfig<T> extends ReferenceConfigBase<T> {
                     aggregateUrlFromRegistry(referenceParameters);
                 }
             }
+            // 第一块核心源码在这里，RegistryProtocol创建了invoker
             createInvokerForRemote();
         }
 
         if (logger.isInfoEnabled()) {
-            logger.info("Referred dubbo service: [" + referenceParameters.get(INTERFACE_KEY) + "]." +
-                (Boolean.parseBoolean(referenceParameters.get(GENERIC_KEY)) ?
-                    " it's GenericService reference" : " it's not GenericService reference"));
+            logger.info("Referred dubbo service " + interfaceClass.getName());
         }
 
+        // 这些都是url的处理
         URL consumerUrl = new ServiceConfigURL(CONSUMER_PROTOCOL, referenceParameters.get(REGISTER_IP_KEY), 0,
             referenceParameters.get(INTERFACE_KEY), referenceParameters);
         consumerUrl = consumerUrl.setScopeModel(getScopeModel());
         consumerUrl = consumerUrl.setServiceModel(consumerModel);
-        MetadataUtils.publishServiceDefinition(consumerUrl, consumerModel.getServiceModel(), getApplicationModel());
+        // 他对于consumer的元数据，也会在这里做一个发布
+        MetadataUtils.publishServiceDefinition(consumerUrl);
 
         // create service proxy
+        // 基于invoker创建出了动态代理
         return (T) proxyFactory.getProxy(invoker, ProtocolUtils.isGeneric(generic));
     }
 
@@ -420,7 +415,7 @@ public class ReferenceConfig<T> extends ReferenceConfigBase<T> {
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
     private void createInvokerForLocal(Map<String, String> referenceParameters) {
-        URL url = new ServiceConfigURL(LOCAL_PROTOCOL, LOCALHOST_VALUE, 0, interfaceClass.getName(), referenceParameters);
+        URL url = new ServiceConfigURL(LOCAL_PROTOCOL, LOCALHOST_VALUE, 0, interfaceClass.getName()).addParameters(referenceParameters);
         url = url.setScopeModel(getScopeModel());
         url = url.setServiceModel(consumerModel);
         Invoker<?> withFilter = protocolSPI.refer(interfaceClass, url);
@@ -439,7 +434,7 @@ public class ReferenceConfig<T> extends ReferenceConfigBase<T> {
      */
     private void parseUrl(Map<String, String> referenceParameters) {
         String[] us = SEMICOLON_SPLIT_PATTERN.split(url);
-        if (ArrayUtils.isNotEmpty(us)) {
+        if (us != null && us.length > 0) {
             for (String u : us) {
                 URL url = URL.valueOf(u);
                 if (StringUtils.isEmpty(url.getPath())) {
@@ -489,12 +484,27 @@ public class ReferenceConfig<T> extends ReferenceConfigBase<T> {
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
     private void createInvokerForRemote() {
+        // 这段代码里，静态代码的角度来说，不用去动态调试他
+        // protocolSPI.refer -> invokers -> cluster.join -> invoker
+
         if (urls.size() == 1) {
             URL curUrl = urls.get(0);
-            invoker = protocolSPI.refer(interfaceClass, curUrl);
-            if (!UrlUtils.isRegistry(curUrl)) {
+
+            // 会基于RegistryProtocol.refer构建出来一套invoker，还是比较复杂的
+            // migration invoker，zk registry + failover cluster
+
+            // RegistryProtocol -> 调用DubboProtocol，会觉得非常的奇怪
+            // 两个人本身都是Protocol
+            // 代码设计语义，会觉得很模糊，设计洁癖
+            // activate自动激活机制，拿到一批protocols，把每个protocol要负责的语义做一个封装
+            // 依次运行每个protocol就可以了，默认protocol，负责按照顺序依次运行各个protocol对export或者是refer的语义
+
+            invoker = protocolSPI.refer(interfaceClass,curUrl);
+
+            if (!UrlUtils.isRegistry(curUrl)){
                 List<Invoker<?>> invokers = new ArrayList<>();
                 invokers.add(invoker);
+                // 对invoker进行了一个深加工和处理，又拿到了一个invoker，覆盖赋值处理
                 invoker = Cluster.getCluster(scopeModel, Cluster.DEFAULT).join(new StaticDirectory(curUrl, invokers), true);
             }
         } else {
@@ -531,18 +541,13 @@ public class ReferenceConfig<T> extends ReferenceConfigBase<T> {
     }
 
     private void checkInvokerAvailable() throws IllegalStateException {
+        // dubbo invoker已经搞好了，目标provider服务实例集群，都搞好了，服务实例都是一个dubbo invoker
+        // invoker体系
+        // 就需要去检查invoker体系是否可用
         if (shouldCheck() && !invoker.isAvailable()) {
             invoker.destroy();
-            throw new IllegalStateException("Failed to check the status of the service "
-                + interfaceName
-                + ". No provider available for the service "
-                + (group == null ? "" : group + "/")
-                + interfaceName +
-                (version == null ? "" : ":" + version)
-                + " from the url "
-                + invoker.getUrl()
-                + " to the consumer "
-                + NetUtils.getLocalHost() + " use dubbo version " + Version.getVersion());
+            throw new IllegalStateException("Should has at least one way to know which services this interface belongs to," +
+                " subscription url: " + invoker.getUrl());
         }
     }
 
@@ -567,18 +572,12 @@ public class ReferenceConfig<T> extends ReferenceConfigBase<T> {
             setGeneric(getConsumer().getGeneric());
         }
         if (ProtocolUtils.isGeneric(generic)) {
-            if (interfaceClass != null && !interfaceClass.equals(GenericService.class)) {
-                logger.warn(String.format("Found conflicting attributes for interface type: [interfaceClass=%s] and [generic=%s], " +
-                        "because the 'generic' attribute has higher priority than 'interfaceClass', so change 'interfaceClass' to '%s'. " +
-                        "Note: it will make this reference bean as a candidate bean of type '%s' instead of '%s' when resolving dependency in Spring.",
-                    interfaceClass.getName(), generic, GenericService.class.getName(), GenericService.class.getName(), interfaceClass.getName()));
-            }
             interfaceClass = GenericService.class;
         } else {
             try {
-                if (getInterfaceClassLoader() != null && (interfaceClass == null || interfaceClass.getClassLoader() != getInterfaceClassLoader())) {
+                if (getInterfaceClassLoader() != null) {
                     interfaceClass = Class.forName(interfaceName, true, getInterfaceClassLoader());
-                } else if (interfaceClass == null) {
+                } else {
                     interfaceClass = Class.forName(interfaceName, true, Thread.currentThread()
                         .getContextClassLoader());
                 }

@@ -25,8 +25,6 @@ import org.apache.dubbo.common.utils.StringUtils;
 import org.apache.dubbo.config.annotation.Method;
 import org.apache.dubbo.config.support.Parameter;
 import org.apache.dubbo.rpc.model.AsyncMethodInfo;
-import org.apache.dubbo.rpc.model.ModuleModel;
-import org.apache.dubbo.rpc.model.ScopeModelUtil;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -50,6 +48,7 @@ public class MethodConfig extends AbstractMethodConfig {
 
     /**
      * The method name
+     * 方法名称
      */
     private String name;
 
@@ -59,17 +58,17 @@ public class MethodConfig extends AbstractMethodConfig {
     private Integer stat;
 
     /**
-     * Whether to retry
+     * Whether to retry，方法是否支持重试
      */
     private Boolean retry;
 
     /**
-     * If it's reliable
+     * If it's reliable，方法是否是可靠的
      */
     private Boolean reliable;
 
     /**
-     * Thread limits for method invocations
+     * Thread limits for method invocations，对这个方法最多可以同时允许多少线程并发访问
      */
     private Integer executes;
 
@@ -79,12 +78,14 @@ public class MethodConfig extends AbstractMethodConfig {
     private Boolean deprecated;
 
     /**
-     * Whether to enable sticky
+     * Whether to enable sticky，对这个方法是否启用sticky机制，粘粘的意思
+     * sticky机制如果一旦说启用了，粘滞调用，尽可能的会让你的一个consumer端就针对你的一个指定的provider端的实例发起调用
+     * 把你的一个consumer端和你的一个provider端粘在一起
      */
     private Boolean sticky;
 
     /**
-     * Whether you need to return
+     * Whether need to return
      */
     private Boolean isReturn;
 
@@ -139,10 +140,6 @@ public class MethodConfig extends AbstractMethodConfig {
     public MethodConfig() {
     }
 
-    public MethodConfig(ModuleModel moduleModel) {
-        super(moduleModel);
-    }
-
     /**
      * TODO remove this construct, the callback method processing logic needs to rely on Spring context
      */
@@ -177,7 +174,7 @@ public class MethodConfig extends AbstractMethodConfig {
         }
 
         if (method.arguments() != null && method.arguments().length != 0) {
-            List<ArgumentConfig> argumentConfigs = new ArrayList<>(method.arguments().length);
+            List<ArgumentConfig> argumentConfigs = new ArrayList<ArgumentConfig>(method.arguments().length);
             this.setArguments(argumentConfigs);
             for (int i = 0; i < method.arguments().length; i++) {
                 ArgumentConfig argumentConfig = new ArgumentConfig(method.arguments()[i]);
@@ -237,8 +234,7 @@ public class MethodConfig extends AbstractMethodConfig {
         if (argument.getIndex() != null && argument.getIndex() >= 0) {
             String prefix = argument.getIndex() + ".";
             Environment environment = getScopeModel().getModelEnvironment();
-            List<java.lang.reflect.Method> methods = MethodUtils.getMethods(argument.getClass(),
-                method -> method.getDeclaringClass() != Object.class);
+            java.lang.reflect.Method[] methods = argument.getClass().getMethods();
             for (java.lang.reflect.Method method : methods) {
                 if (MethodUtils.isSetter(method)) {
                     String propertyName = extractPropertyName(method.getName());
@@ -254,7 +250,7 @@ public class MethodConfig extends AbstractMethodConfig {
                         String value = StringUtils.trim(subPropsConfiguration.getString(kebabPropertyName));
                         if (StringUtils.hasText(value) && ClassUtils.isTypeMatch(method.getParameterTypes()[0], value)) {
                             value = environment.resolvePlaceholders(value);
-                            method.invoke(argument, ClassUtils.convertPrimitive(ScopeModelUtil.getFrameworkModel(getScopeModel()), method.getParameterTypes()[0], value));
+                            method.invoke(argument, ClassUtils.convertPrimitive(method.getParameterTypes()[0], value));
                         }
                     } catch (Exception e) {
                         logger.info("Failed to override the property " + method.getName() + " in " +

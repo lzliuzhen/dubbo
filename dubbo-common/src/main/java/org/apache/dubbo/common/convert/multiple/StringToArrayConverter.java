@@ -17,8 +17,6 @@
 package org.apache.dubbo.common.convert.multiple;
 
 import org.apache.dubbo.common.convert.Converter;
-import org.apache.dubbo.common.convert.ConverterUtil;
-import org.apache.dubbo.rpc.model.FrameworkModel;
 
 import java.lang.reflect.Array;
 
@@ -30,11 +28,6 @@ import static java.lang.reflect.Array.newInstance;
  * @since 2.7.6
  */
 public class StringToArrayConverter implements StringToMultiValueConverter {
-    private ConverterUtil converterUtil;
-
-    public StringToArrayConverter(FrameworkModel frameworkModel) {
-        converterUtil = frameworkModel.getBeanFactory().getBean(ConverterUtil.class);
-    }
 
     public boolean accept(Class<String> type, Class<?> multiValueType) {
         if (multiValueType != null && multiValueType.isArray()) {
@@ -48,7 +41,7 @@ public class StringToArrayConverter implements StringToMultiValueConverter {
 
         Class<?> componentType = targetType.getComponentType();
 
-        Converter converter = converterUtil.getConverter(String.class, componentType);
+        Converter converter = Converter.getConverter(String.class, componentType);
 
         Object array = newInstance(componentType, size);
 

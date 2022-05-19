@@ -16,6 +16,16 @@
  */
 package org.apache.dubbo.remoting.transport.netty4;
 
+import io.netty.bootstrap.Bootstrap;
+import io.netty.buffer.PooledByteBufAllocator;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelOption;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.handler.proxy.Socks5ProxyHandler;
+import io.netty.handler.timeout.IdleStateHandler;
 import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.Version;
 import org.apache.dubbo.common.config.ConfigurationUtils;
@@ -30,17 +40,6 @@ import org.apache.dubbo.remoting.RemotingException;
 import org.apache.dubbo.remoting.api.SslClientTlsHandler;
 import org.apache.dubbo.remoting.transport.AbstractClient;
 import org.apache.dubbo.remoting.utils.UrlUtils;
-
-import io.netty.bootstrap.Bootstrap;
-import io.netty.buffer.PooledByteBufAllocator;
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelInitializer;
-import io.netty.channel.ChannelOption;
-import io.netty.channel.EventLoopGroup;
-import io.netty.channel.socket.SocketChannel;
-import io.netty.handler.proxy.Socks5ProxyHandler;
-import io.netty.handler.timeout.IdleStateHandler;
 
 import java.net.InetSocketAddress;
 
@@ -96,16 +95,13 @@ public class NettyClient extends AbstractClient {
      */
     @Override
     protected void doOpen() throws Throwable {
-        final NettyClientHandler nettyClientHandler = createNettyClientHandler();
+        // handler，一般来说是用来处理网络请求的
+        final NettyClientHandler nettyClientHandler = new NettyClientHandler(getUrl(), this);
+
+        // 企业级netty编程示范
+        // 对于Netty Client，必须搞一个Bootstrap
         bootstrap = new Bootstrap();
-        initBootstrap(nettyClientHandler);
-    }
-
-    protected NettyClientHandler createNettyClientHandler() {
-        return new NettyClientHandler(getUrl(), this);
-    }
-
-    protected void initBootstrap(NettyClientHandler nettyClientHandler) {
+        // 设置你的group，以及一些网络通信参数
         bootstrap.group(EVENT_LOOP_GROUP.get())
                 .option(ChannelOption.SO_KEEPALIVE, true)
                 .option(ChannelOption.TCP_NODELAY, true)
@@ -114,6 +110,8 @@ public class NettyClient extends AbstractClient {
                 .channel(socketChannelClass());
 
         bootstrap.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, Math.max(DEFAULT_CONNECT_TIMEOUT, getConnectTimeout()));
+
+        // netty的编程，企业级做法
         bootstrap.handler(new ChannelInitializer<SocketChannel>() {
 
             @Override
@@ -127,7 +125,7 @@ public class NettyClient extends AbstractClient {
                 NettyCodecAdapter adapter = new NettyCodecAdapter(getCodec(), getUrl(), NettyClient.this);
                 ch.pipeline()//.addLast("logging",new LoggingHandler(LogLevel.INFO))//for debug
                         .addLast("decoder", adapter.getDecoder())
-                        .addLast("encoder", adapter.getEncoder())
+                        .addLast("encoder", adapter.getEncoder()) // encoder就是用来负责进行数据编码，序列化的过程，把对象搞成二进制的数据，才可以通过网络发送出去
                         .addLast("client-idle-handler", new IdleStateHandler(heartbeatInterval, 0, 0, MILLISECONDS))
                         .addLast("handler", nettyClientHandler);
 
@@ -152,11 +150,14 @@ public class NettyClient extends AbstractClient {
     @Override
     protected void doConnect() throws Throwable {
         long start = System.currentTimeMillis();
+        // 真正要对一个server端发起连接，netty的connect
+        // 发起一个网络连接，但是这个网络连接，并不是立刻就可以做好的
         ChannelFuture future = bootstrap.connect(getConnectAddress());
         try {
             boolean ret = future.awaitUninterruptibly(getConnectTimeout(), MILLISECONDS);
 
             if (ret && future.isSuccess()) {
+                // 如果连接成功了，此时可以通过future拿到一个channel，跟server端，provider服务实例建立好的网络连接
                 Channel newChannel = future.channel();
                 try {
                     // Close old channel
@@ -236,13 +237,5 @@ public class NettyClient extends AbstractClient {
     @Override
     public boolean canHandleIdle() {
         return true;
-    }
-
-    protected EventLoopGroup getEventLoopGroup() {
-        return EVENT_LOOP_GROUP.get();
-    }
-
-    protected Bootstrap getBootstrap() {
-        return bootstrap;
     }
 }

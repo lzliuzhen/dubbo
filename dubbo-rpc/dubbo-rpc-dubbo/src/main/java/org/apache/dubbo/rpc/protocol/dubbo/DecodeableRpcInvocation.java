@@ -115,10 +115,10 @@ public class DecodeableRpcInvocation extends RpcInvocation implements Codec, Dec
     @Override
     public Object decode(Channel channel, InputStream input) throws IOException {
         ObjectInput in = CodecSupport.getSerialization(channel.getUrl(), serializationType)
-            .deserialize(channel.getUrl(), input);
+            .deserialize(channel.getUrl(), input); // 基于hessian2框架，搞了一个支持反序列化的输入流，嫁接了底层的输入流这样子
         this.put(SERIALIZATION_ID_KEY, serializationType);
 
-        String dubboVersion = in.readUTF();
+        String dubboVersion = in.readUTF(); // dubbo version
         request.setVersion(dubboVersion);
         setAttachment(DUBBO_VERSION_KEY, dubboVersion);
 
@@ -172,6 +172,9 @@ public class DecodeableRpcInvocation extends RpcInvocation implements Codec, Dec
                         pts = methodDescriptor.getParameterClasses();
                         this.setReturnTypes(methodDescriptor.getReturnTypes());
 
+                        // 本次你的rpc调用，肯定是针对一个接口的一个方法
+                        // 此时他就必须把你的接口、方法、方法参数、方法返回值，都提取出来这样子
+
                         // switch TCCL
                         if (CollectionUtils.isNotEmpty(providerModels)) {
                             if (providerModels.size() == 1) {
@@ -210,16 +213,23 @@ public class DecodeableRpcInvocation extends RpcInvocation implements Codec, Dec
 
                 args = new Object[pts.length];
                 for (int i = 0; i < args.length; i++) {
-                    args[i] = in.readObject(pts[i]);
+                    try {
+                        args[i] = in.readObject(pts[i]); // 跟我们序列化一样，把参数对象一个一个的写入的支持序列化的流里去
+                        // 此时是从支持反序列化的流里，把你的方法的参数对象，一个一个的读取出来
+                    } catch (Exception e) {
+                        if (log.isWarnEnabled()) {
+                            log.warn("Decode argument failed: " + e.getMessage(), e);
+                        }
+                    }
                 }
             }
             setParameterTypes(pts);
 
             Map<String, Object> map = in.readAttachments();
-            if (CollectionUtils.isNotEmptyMap(map)) {
+            if (map != null && map.size() > 0) {
                 Map<String, Object> attachment = getObjectAttachments();
                 if (attachment == null) {
-                    attachment = new HashMap<>(map.size());
+                    attachment = new HashMap<>();
                 }
                 attachment.putAll(map);
                 setObjectAttachments(attachment);
@@ -231,7 +241,7 @@ public class DecodeableRpcInvocation extends RpcInvocation implements Codec, Dec
             }
 
             setArguments(args);
-            String targetServiceName = buildKey(getAttachment(PATH_KEY),
+            String targetServiceName = buildKey((String) getAttachment(PATH_KEY),
                 getAttachment(GROUP_KEY),
                 getAttachment(VERSION_KEY));
             setTargetServiceUniqueName(targetServiceName);

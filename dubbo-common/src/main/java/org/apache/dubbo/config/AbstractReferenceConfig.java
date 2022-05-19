@@ -18,15 +18,12 @@ package org.apache.dubbo.config;
 
 import org.apache.dubbo.common.utils.StringUtils;
 import org.apache.dubbo.config.support.Parameter;
-import org.apache.dubbo.rpc.model.ModuleModel;
 import org.apache.dubbo.rpc.support.ProtocolUtils;
 
 import static org.apache.dubbo.common.constants.CommonConstants.INVOKER_LISTENER_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.REFERENCE_FILTER_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.REFER_ASYNC_KEY;
-import static org.apache.dubbo.common.constants.CommonConstants.ROUTER_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.STUB_EVENT_KEY;
-import static org.apache.dubbo.common.constants.RegistryConstants.PROVIDED_BY;
 
 /**
  * AbstractConsumerConfig
@@ -85,19 +82,12 @@ public abstract class AbstractReferenceConfig extends AbstractInterfaceConfig {
     protected String router;
 
     /**
-     * Weather the reference is referred asynchronously
+     * Weather the reference is refer asynchronously
      * @deprecated
      * @see ModuleConfig#referAsync
      */
     @Deprecated
     private Boolean referAsync;
-
-    public AbstractReferenceConfig() {
-    }
-
-    public AbstractReferenceConfig(ModuleModel moduleModel) {
-        super(moduleModel);
-    }
 
     @Override
     protected void checkDefault() {
@@ -239,7 +229,7 @@ public abstract class AbstractReferenceConfig extends AbstractInterfaceConfig {
 
 
 
-    @Parameter(key = PROVIDED_BY)
+    @Parameter(key = "provided-by")
     public String getProvidedBy() {
         return providedBy;
     }
@@ -248,7 +238,7 @@ public abstract class AbstractReferenceConfig extends AbstractInterfaceConfig {
         this.providedBy = providedBy;
     }
 
-    @Parameter(key = ROUTER_KEY, append = true)
+    @Parameter(key = "router", append = true)
     public String getRouter() {
         return router;
     }

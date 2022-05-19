@@ -43,10 +43,11 @@ public class InstantiationStrategy {
         this.scopeModelAccessor = scopeModelAccessor;
     }
 
+    // 这个东西，就是把extension扩展实例构建出来的策略和逻辑
     public <T> T instantiate(Class<T> type) throws ReflectiveOperationException {
 
         // should not use default constructor directly, maybe also has another constructor matched scope model arguments
-        // 1. try to get default constructor
+        // 1. try get default constructor
         Constructor<T> defaultConstructor = null;
         try {
             defaultConstructor = type.getConstructor();
@@ -90,6 +91,7 @@ public class InstantiationStrategy {
         for (int i = 0; i < parameterTypes.length; i++) {
             args[i] = getArgumentValueForType(parameterTypes[i]);
         }
+        // 在这里使用反射，constructor构建了一个实现类的对象
         return (T) targetConstructor.newInstance(args);
     }
 

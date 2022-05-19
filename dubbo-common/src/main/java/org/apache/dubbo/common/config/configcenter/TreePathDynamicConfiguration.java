@@ -61,10 +61,12 @@ public abstract class TreePathDynamicConfiguration extends AbstractDynamicConfig
      */
     public static final String DEFAULT_CONFIG_BASE_PATH = "/config";
 
-    protected final String rootPath;
+    private final String rootPath;
 
     public TreePathDynamicConfiguration(URL url) {
+        // abstract抽象父类里就是搞了一个线程池
         super(url);
+        // 去搞一个对应的root path，按照一个规则来处理zk的path
         this.rootPath = getRootPath(url);
     }
 
@@ -157,6 +159,7 @@ public abstract class TreePathDynamicConfiguration extends AbstractDynamicConfig
     }
 
     private String buildRootPath(URL url) {
+        // /dubbo/config/dubbo
         return PATH_SEPARATOR + getConfigNamespace(url) + getConfigBasePath(url);
     }
 

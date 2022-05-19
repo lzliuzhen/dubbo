@@ -19,7 +19,6 @@ package org.apache.dubbo.rpc.protocol;
 import org.apache.dubbo.common.Node;
 import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.Version;
-import org.apache.dubbo.common.constants.CommonConstants;
 import org.apache.dubbo.common.logger.Logger;
 import org.apache.dubbo.common.logger.LoggerFactory;
 import org.apache.dubbo.common.threadpool.ThreadlessExecutor;
@@ -86,11 +85,6 @@ public abstract class AbstractInvoker<T> implements Invoker<T> {
      */
     private boolean destroyed = false;
 
-    /**
-     * Whether set future to Thread Local when invocation mode is sync
-     */
-    private static final boolean setFutureWhenSync = Boolean.parseBoolean(System.getProperty(CommonConstants.SET_FUTURE_IN_SYNC_MODE, "true"));
-
     // -- Constructor
 
     public AbstractInvoker(Class<T> type, URL url) {
@@ -119,7 +113,7 @@ public abstract class AbstractInvoker<T> implements Invoker<T> {
         if (ArrayUtils.isEmpty(keys)) {
             return null;
         }
-        Map<String, Object> attachment = new HashMap<>(keys.length);
+        Map<String, Object> attachment = new HashMap<>();
         for (String key : keys) {
             String value = url.getParameter(key);
             if (value != null && value.length() > 0) {
@@ -179,9 +173,12 @@ public abstract class AbstractInvoker<T> implements Invoker<T> {
         prepareInvocation(invocation);
 
         // do invoke rpc invocation and return async result
+        // 通过源码分析，可以很明确的发现一点，他们rpc调用返回的结果，是异步的，async
         AsyncRpcResult asyncResult = doInvokeAndReturn(invocation);
 
         // wait rpc result if sync
+        // dubbo默认情况下发起rpc请求，是异步化的操作
+        // 但是如果你是要同步的话，那么是可以在这里等待同步的结果
         waitForResultIfSync(asyncResult, invocation);
 
         return asyncResult;
@@ -241,10 +238,8 @@ public abstract class AbstractInvoker<T> implements Invoker<T> {
             asyncResult = AsyncRpcResult.newDefaultAsyncResult(null, e, invocation);
         }
 
-        if (setFutureWhenSync || invocation.getInvokeMode() != InvokeMode.SYNC) {
-            // set server context
-            RpcContext.getServiceContext().setFuture(new FutureAdapter<>(asyncResult.getResponseFuture()));
-        }
+        // set server context
+        RpcContext.getServiceContext().setFuture(new FutureAdapter<>(asyncResult.getResponseFuture()));
 
         return asyncResult;
     }
@@ -259,7 +254,7 @@ public abstract class AbstractInvoker<T> implements Invoker<T> {
              * must call {@link java.util.concurrent.CompletableFuture#get(long, TimeUnit)} because
              * {@link java.util.concurrent.CompletableFuture#get()} was proved to have serious performance drop.
              */
-            Object timeout = invocation.getObjectAttachment(TIMEOUT_KEY);
+            Object timeout = invocation.get(TIMEOUT_KEY);
             if (timeout instanceof Integer) {
                 asyncResult.get((Integer) timeout, TimeUnit.MILLISECONDS);
             } else {
@@ -291,12 +286,18 @@ public abstract class AbstractInvoker<T> implements Invoker<T> {
     // -- Protected api
 
     protected ExecutorService getCallbackExecutor(URL url, Invocation inv) {
-        if (InvokeMode.SYNC == RpcUtils.getInvokeMode(getUrl(), inv)) {
-            return new ThreadlessExecutor();
-        }
-        return url.getOrDefaultApplicationModel().getExtensionLoader(ExecutorRepository.class)
+        // 通过SPI机制拿到ExecutorRepository，线程池存储组件，把dubbo内部所有的线程池都放在里面了
+        // 或者是要创建新的线程池也是通过他，model组件体系很简单，就是封装了dubbo内部所有的公共的组件体系，设计模式来形容
+        // model组件设计思想，门面模式，Model（本身是没有意义的）-> 门面，封装了很多的组件，SPI、service数据、配置、repository组件、bean factory
+        // model就成为了一个门面，在整个dubbo框架里，如果要用到一些公共组件，就直接找model去获取就可以了
+        ExecutorService sharedExecutor = url.getOrDefaultApplicationModel().getExtensionLoader(ExecutorRepository.class)
             .getDefaultExtension()
             .getExecutor(url);
+        if (InvokeMode.SYNC == RpcUtils.getInvokeMode(getUrl(), inv)) {
+            return new ThreadlessExecutor(sharedExecutor);
+        } else {
+            return sharedExecutor;
+        }
     }
 
     /**

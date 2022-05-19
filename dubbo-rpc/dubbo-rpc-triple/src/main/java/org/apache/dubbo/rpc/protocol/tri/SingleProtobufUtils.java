@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.dubbo.rpc.protocol.tri;
 
 import com.google.protobuf.BoolValue;
@@ -41,9 +40,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 public class SingleProtobufUtils {
-    private static final ConcurrentHashMap<Class<?>, Message> INST_CACHE = new ConcurrentHashMap<>();
-    private static final ExtensionRegistryLite GLOBAL_REGISTRY = ExtensionRegistryLite.getEmptyRegistry();
-    private static final ConcurrentMap<Class<?>, SingleMessageMarshaller<?>> MARSHALLER_CACHE = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<Class<?>, Message> instCache = new ConcurrentHashMap<>();
+    private static final ExtensionRegistryLite globalRegistry =
+        ExtensionRegistryLite.getEmptyRegistry();
+    private static final ConcurrentMap<Class<?>, SingleMessageMarshaller<?>> marshallers = new ConcurrentHashMap<>();
 
     static {
         // Built-in types need to be registered in advance
@@ -67,12 +67,12 @@ public class SingleProtobufUtils {
     }
 
     public static <T extends MessageLite> void marshaller(T defaultInstance) {
-        MARSHALLER_CACHE.put(defaultInstance.getClass(), new SingleMessageMarshaller<>(defaultInstance));
+        marshallers.put(defaultInstance.getClass(), new SingleMessageMarshaller<>(defaultInstance));
     }
 
     @SuppressWarnings("all")
     public static Message defaultInst(Class<?> clz) {
-        Message defaultInst = INST_CACHE.get(clz);
+        Message defaultInst = instCache.get(clz);
         if (defaultInst != null) {
             return defaultInst;
         }
@@ -81,7 +81,7 @@ public class SingleProtobufUtils {
         } catch (IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
             throw new RuntimeException("Create default protobuf instance failed ", e);
         }
-        INST_CACHE.put(clz, defaultInst);
+        instCache.put(clz, defaultInst);
         return defaultInst;
     }
 
@@ -110,7 +110,7 @@ public class SingleProtobufUtils {
     }
 
     private static SingleMessageMarshaller<?> getMarshaller(Class<?> clz) {
-        return MARSHALLER_CACHE.computeIfAbsent(clz, k -> new SingleMessageMarshaller(k));
+        return marshallers.computeIfAbsent(clz, k -> new SingleMessageMarshaller(k));
     }
 
     public static final class SingleMessageMarshaller<T extends MessageLite> {
@@ -128,7 +128,7 @@ public class SingleProtobufUtils {
         }
 
         public T parse(InputStream stream) throws InvalidProtocolBufferException {
-            return parser.parseFrom(stream, GLOBAL_REGISTRY);
+            return parser.parseFrom(stream, globalRegistry);
         }
     }
 

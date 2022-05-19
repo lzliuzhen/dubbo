@@ -20,8 +20,10 @@ import org.apache.dubbo.config.ApplicationConfig;
 import org.apache.dubbo.config.ModuleConfig;
 import org.apache.dubbo.config.ProtocolConfig;
 import org.apache.dubbo.config.RegistryConfig;
-import org.apache.dubbo.config.bootstrap.DubboBootstrap;
 
+import org.apache.dubbo.config.bootstrap.DubboBootstrap;
+import org.apache.dubbo.config.spring.registrycenter.ZookeeperSingleRegistryCenter;
+import org.apache.dubbo.config.spring.registrycenter.RegistryCenter;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -81,14 +83,20 @@ public class DubboConfigConfigurationTest {
 
     @Test
     public void testMultiple() {
-        context.register(DubboConfigConfiguration.Multiple.class);
-        context.refresh();
+        RegistryCenter singleRegistryCenter = new ZookeeperSingleRegistryCenter();
+        singleRegistryCenter.startup();
+        try{
+            context.register(DubboConfigConfiguration.Multiple.class);
+            context.refresh();
 
-        RegistryConfig registry1 = context.getBean("registry1", RegistryConfig.class);
-        Assertions.assertEquals(2181, registry1.getPort());
+            RegistryConfig registry1 = context.getBean("registry1", RegistryConfig.class);
+            Assertions.assertEquals(2181, registry1.getPort());
 
-        RegistryConfig registry2 = context.getBean("registry2", RegistryConfig.class);
-        Assertions.assertEquals(2182, registry2.getPort());
+            RegistryConfig registry2 = context.getBean("registry2", RegistryConfig.class);
+            Assertions.assertEquals(2182, registry2.getPort());
+        }finally {
+            singleRegistryCenter.shutdown();
+        }
     }
 
 }

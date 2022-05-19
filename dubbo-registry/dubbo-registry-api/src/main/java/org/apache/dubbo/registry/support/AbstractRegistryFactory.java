@@ -41,12 +41,12 @@ public abstract class AbstractRegistryFactory implements RegistryFactory, ScopeM
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AbstractRegistryFactory.class);
 
+
     private RegistryManager registryManager;
-    protected ApplicationModel applicationModel;
 
     @Override
     public void setApplicationModel(ApplicationModel applicationModel) {
-        this.applicationModel = applicationModel;
+        // 通过model组件拿到dubbu自己管理的bean容器，从bean容器里拿到对应的RegistryManager bean实例
         this.registryManager = applicationModel.getBeanFactory().getBean(RegistryManager.class);
     }
 
@@ -65,9 +65,7 @@ public abstract class AbstractRegistryFactory implements RegistryFactory, ScopeM
         url = URLBuilder.from(url)
             .setPath(RegistryService.class.getName())
             .addParameter(INTERFACE_KEY, RegistryService.class.getName())
-            .removeParameter(TIMESTAMP_KEY)
-            .removeAttribute(EXPORT_KEY)
-            .removeAttribute(REFER_KEY)
+            .removeParameters(EXPORT_KEY, REFER_KEY, TIMESTAMP_KEY)
             .build();
         String key = createRegistryCacheKey(url);
         Registry registry = null;
@@ -110,7 +108,7 @@ public abstract class AbstractRegistryFactory implements RegistryFactory, ScopeM
 
     /**
      * Create the key for the registries cache.
-     * This method may be overridden by the sub-class.
+     * This method may be override by the sub-class.
      *
      * @param url the registration {@link URL url}
      * @return non-null
@@ -120,6 +118,5 @@ public abstract class AbstractRegistryFactory implements RegistryFactory, ScopeM
     }
 
     protected abstract Registry createRegistry(URL url);
-
 
 }

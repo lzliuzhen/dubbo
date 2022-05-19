@@ -17,6 +17,7 @@
 package org.apache.dubbo.rpc.model;
 
 import org.apache.dubbo.common.BaseServiceMetadata;
+import org.apache.dubbo.common.URL;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -25,17 +26,20 @@ import java.util.concurrent.ConcurrentHashMap;
  * Notice, this class currently has no usage inside Dubbo.
  *
  * data related to service level such as name, version, classloader of business service,
- * security info, etc. Also, with a AttributeMap for extension.
+ * security info, etc. Also with a AttributeMap for extension.
  */
 public class ServiceMetadata extends BaseServiceMetadata {
 
+    // 默认的服务分组
     private String defaultGroup;
+    // 服务接口类型，Class对象，clazz
     private Class<?> serviceType;
-
+    // 目标可以用于调用的实现接口的实现类的实例对象
     private Object target;
 
     /**
      * will be transferred to remote side
+     * 里面可以封装和放置一大堆的对象和对应的属性配置
      */
     private final Map<String, Object> attachments = new ConcurrentHashMap<>();
     /**
@@ -48,7 +52,7 @@ public class ServiceMetadata extends BaseServiceMetadata {
         this.defaultGroup = group;
         this.group = group;
         this.version = version;
-        this.serviceKey = buildServiceKey(serviceInterfaceName, group, version);
+        this.serviceKey = URL.buildKey(serviceInterfaceName, group, version);
         this.serviceType = serviceType;
     }
 

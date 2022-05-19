@@ -22,107 +22,90 @@ import org.apache.dubbo.common.config.configcenter.ConfigChangedEvent;
 import org.apache.dubbo.common.config.configcenter.ConfigurationListener;
 import org.apache.dubbo.common.logger.Logger;
 import org.apache.dubbo.common.logger.LoggerFactory;
-import org.apache.dubbo.common.utils.CollectionUtils;
-import org.apache.dubbo.rpc.cluster.router.mesh.util.MeshRuleDispatcher;
-import org.apache.dubbo.rpc.cluster.router.mesh.util.MeshRuleListener;
+import org.apache.dubbo.common.utils.PojoUtils;
+import org.apache.dubbo.rpc.cluster.router.mesh.rule.VsDestinationGroup;
+import org.apache.dubbo.rpc.cluster.router.mesh.rule.destination.DestinationRule;
+import org.apache.dubbo.rpc.cluster.router.mesh.rule.virtualservice.VirtualServiceRule;
+import org.apache.dubbo.rpc.cluster.router.mesh.util.VsDestinationGroupRuleDispatcher;
 
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 import org.yaml.snakeyaml.representer.Representer;
 
 import java.text.MessageFormat;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
 import java.util.Map;
-
-import static org.apache.dubbo.rpc.cluster.router.mesh.route.MeshRuleConstants.METADATA_KEY;
-import static org.apache.dubbo.rpc.cluster.router.mesh.route.MeshRuleConstants.NAME_KEY;
-import static org.apache.dubbo.rpc.cluster.router.mesh.route.MeshRuleConstants.STANDARD_ROUTER_KEY;
 
 
 public class MeshAppRuleListener implements ConfigurationListener {
 
     public static final Logger logger = LoggerFactory.getLogger(MeshAppRuleListener.class);
 
-    private final MeshRuleDispatcher meshRuleDispatcher;
+    public static final String DESTINATION_RULE_KEY = "DestinationRule";
+
+    public static final String VIRTUAL_SERVICE_KEY = "VirtualService";
+
+    public static final String KIND_KEY = "kind";
+
+    private final VsDestinationGroupRuleDispatcher vsDestinationGroupRuleDispatcher = new VsDestinationGroupRuleDispatcher();
 
     private final String appName;
 
-    private volatile Map<String, List<Map<String, Object>>> ruleMapHolder;
+    private volatile VsDestinationGroup vsDestinationGroupHolder;
 
     public MeshAppRuleListener(String appName) {
         this.appName = appName;
-        this.meshRuleDispatcher = new MeshRuleDispatcher(appName);
     }
 
-    @SuppressWarnings("unchecked")
     public void receiveConfigInfo(String configInfo) {
-        if (logger.isDebugEnabled()) {
+        if(logger.isDebugEnabled()) {
             logger.debug(MessageFormat.format("[MeshAppRule] Received rule for app [{0}]: {1}.",
-                appName, configInfo));
+                    appName, configInfo));
         }
         try {
-            Map<String, List<Map<String, Object>>> groupMap = new HashMap<>();
+
+            VsDestinationGroup vsDestinationGroup = new VsDestinationGroup();
+            vsDestinationGroup.setAppName(appName);
 
             Representer representer = new Representer();
             representer.getPropertyUtils().setSkipMissingProperties(true);
-            Yaml yaml = new Yaml(new SafeConstructor(), representer);
-            Iterable<Object> yamlIterator = yaml.loadAll(configInfo);
 
-            for (Object obj : yamlIterator) {
-                if (obj instanceof Map) {
-                    Map<String, Object> resultMap = (Map<String, Object>) obj;
+            // mesh rule配置是什么格式的，yaml格式
+            // 通过对yaml格式的解析，此时就可以把对应的解析后的配置规则，逐步的转化为对象
+            Yaml yaml = new Yaml(new SafeConstructor());
+            Iterable<Object> objectIterable = yaml.loadAll(configInfo);
+            for (Object result : objectIterable) {
 
-                    String ruleType = computeRuleType(resultMap);
-                    if (ruleType != null) {
-                        groupMap.computeIfAbsent(ruleType, (k)-> new LinkedList<>()).add(resultMap);
-                    } else {
-                        logger.error("Unable to get rule type from raw rule. " +
-                            "Probably the metadata.name is absent. App Name: " + appName + " RawRule: " + configInfo);
-                    }
-                } else {
-                    logger.error("Rule format is unacceptable. App Name: " + appName + " RawRule: " + configInfo);
+                Map resultMap = (Map) result;
+                if (DESTINATION_RULE_KEY.equals(resultMap.get(KIND_KEY))) {
+                    DestinationRule destinationRule = PojoUtils.mapToPojo(resultMap, DestinationRule.class);
+                    vsDestinationGroup.getDestinationRuleList().add(destinationRule);
+
+                } else if (VIRTUAL_SERVICE_KEY.equals(resultMap.get(KIND_KEY))) {
+                    VirtualServiceRule virtualServiceRule = PojoUtils.mapToPojo(resultMap, VirtualServiceRule.class);
+                    vsDestinationGroup.getVirtualServiceRuleList().add(virtualServiceRule);
                 }
             }
 
-            ruleMapHolder = groupMap;
+            vsDestinationGroupHolder = vsDestinationGroup;
         } catch (Exception e) {
             logger.error("[MeshAppRule] parse failed: " + configInfo, e);
         }
-        if (ruleMapHolder != null) {
-            meshRuleDispatcher.post(ruleMapHolder);
+        if (vsDestinationGroupHolder != null) {
+            vsDestinationGroupRuleDispatcher.post(vsDestinationGroupHolder);
         }
+
     }
 
-    @SuppressWarnings("unchecked")
-    private String computeRuleType(Map<String, Object> rule) {
-        Object obj = rule.get(METADATA_KEY);
-        if (obj instanceof Map && CollectionUtils.isNotEmptyMap((Map<String, String>) obj)) {
-            Map<String, String> metadata = (Map<String, String>) obj;
-            String name = metadata.get(NAME_KEY);
-            if (!name.contains(".")) {
-                return STANDARD_ROUTER_KEY;
-            } else {
-                return name.substring(name.indexOf(".") + 1);
-            }
+    public void register(MeshRuleRouter subscriber) {
+        if (vsDestinationGroupHolder != null) {
+            subscriber.onRuleChange(vsDestinationGroupHolder);
         }
-        return null;
-    }
-
-    public <T> void register(MeshRuleListener subscriber) {
-        if (ruleMapHolder != null) {
-            List<Map<String, Object>> rule = ruleMapHolder.get(subscriber.ruleSuffix());
-            if (rule != null) {
-                subscriber.onRuleChange(appName, rule);
-            }
-        }
-        meshRuleDispatcher.register(subscriber);
+        vsDestinationGroupRuleDispatcher.register(subscriber);
     }
 
 
-    public <T> void unregister(MeshRuleListener subscriber) {
-        meshRuleDispatcher.unregister(subscriber);
+    public void unregister(MeshRuleRouter sub) {
+        vsDestinationGroupRuleDispatcher.unregister(sub);
     }
 
     @Override
@@ -132,17 +115,5 @@ public class MeshAppRuleListener implements ConfigurationListener {
             return;
         }
         receiveConfigInfo(event.getContent());
-    }
-
-    public boolean isEmpty() {
-        return meshRuleDispatcher.isEmpty();
-    }
-
-    /**
-     * For ut only
-     */
-    @Deprecated
-    public MeshRuleDispatcher getMeshRuleDispatcher() {
-        return meshRuleDispatcher;
     }
 }

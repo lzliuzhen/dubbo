@@ -16,7 +16,6 @@
  */
 package org.apache.dubbo.registry.client;
 
-import org.apache.dubbo.metadata.MetadataInfo;
 import org.apache.dubbo.rpc.model.ApplicationModel;
 import org.apache.dubbo.rpc.model.ScopeModelUtil;
 
@@ -91,15 +90,9 @@ public interface ServiceInstance extends Serializable {
 
     Map<String, String> getExtendParams();
 
-    String getExtendParam(String key);
-
-    String putExtendParam(String key, String value);
-
-    String putExtendParamIfAbsent(String key, String value);
-
-    String removeExtendParam(String key);
-
     Map<String, String> getAllParams();
+
+    Map<String, Object> getAttributes();
 
     void setApplicationModel(ApplicationModel applicationModel);
 
@@ -132,10 +125,6 @@ public interface ServiceInstance extends Serializable {
         return getMetadata().getOrDefault(name, defaultValue);
     }
 
-    MetadataInfo getServiceMetadata();
-
-    void setServiceMetadata(MetadataInfo serviceMetadata);
-
-    InstanceAddressURL toURL(String protocol);
+    InstanceAddressURL toURL();
 
 }

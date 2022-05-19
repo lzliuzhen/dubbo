@@ -16,11 +16,10 @@
  */
 package org.apache.dubbo.test.check;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.dubbo.common.logger.Logger;
 import org.apache.dubbo.common.logger.LoggerFactory;
 import org.apache.dubbo.rpc.model.FrameworkModel;
-
-import org.apache.commons.lang3.StringUtils;
 import org.junit.platform.engine.TestExecutionResult;
 import org.junit.platform.engine.TestSource;
 import org.junit.platform.engine.support.descriptor.ClassSource;
@@ -197,14 +196,14 @@ public class DubboTestChecker implements TestExecutionListener {
 
     @Override
     public void executionStarted(TestIdentifier testIdentifier) {
-        TestSource testSource = testIdentifier.getSource().orElse(null);
-        if (testSource instanceof ClassSource) {
+//        TestSource testSource = testIdentifier.getSource().orElse(null);
+//        if (testSource instanceof ClassSource) {
 //            ClassSource source = (ClassSource) testSource;
 //            log("Run test class: " + source.getClassName());
-        } else if (testSource instanceof MethodSource) {
-            MethodSource source = (MethodSource) testSource;
-            log("Run test method: " + source.getClassName() + "#" + source.getMethodName());
-        }
+//        } else if (testSource instanceof MethodSource) {
+//            MethodSource source = (MethodSource) testSource;
+//            log("Run test method: " + source.getClassName() + "#" + source.getMethodName());
+//        }
     }
 
     @Override

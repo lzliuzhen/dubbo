@@ -33,6 +33,19 @@ import static org.apache.dubbo.common.constants.CommonConstants.COMMA_SPLIT_PATT
 
 /**
  * ConsistentHashLoadBalance
+ *
+ * 一致性hash，算法，了解过，自己去找资料看一下，亿级流量的redis好像是讲过的
+ *
+ * 纯hash算法，你hash(zhangsan)，hash(lisi)，根据这个hash的值，可以把这个hash值路由到某个节点上去
+ * dubbo进行rpc调用，如果你rpc调用里某个参数值，在多次调用里都是一样的，每次对这个值做hash，结果都是一样的
+ * rpc调用都路由到同一个节点上去
+ *
+ * 很有可能导致节点的负载是不均衡的
+ *
+ * consistent hash，一致性hash，会针对你的各个节点，搞一些虚拟节点，节点和虚拟节点联合起来，就可以组成一个节点环
+ * 你对参数的hash后的值，会在一个环里，落在某个地方，环里落了很多的虚拟节点，此时会让原先给那个节点的请求，分散到多个虚拟节点上去
+ * 把你的请求尽量分散给各个节点
+ *
  */
 public class ConsistentHashLoadBalance extends AbstractLoadBalance {
     public static final String NAME = "consistenthash";
@@ -142,6 +155,7 @@ public class ConsistentHashLoadBalance extends AbstractLoadBalance {
             return buf.toString();
         }
         private Invoker<T> selectForKey(long hash) {
+            // virtual概念，invoker就算一个节点，引入一些虚拟节点
             Map.Entry<Long, Invoker<T>> entry = virtualInvokers.ceilingEntry(hash);
             if (entry == null) {
                 entry = virtualInvokers.firstEntry();

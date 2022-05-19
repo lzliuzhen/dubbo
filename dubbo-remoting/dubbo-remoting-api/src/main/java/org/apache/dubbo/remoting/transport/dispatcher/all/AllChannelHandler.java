@@ -37,8 +37,17 @@ public class AllChannelHandler extends WrappedChannelHandler {
 
     @Override
     public void connected(Channel channel) throws RemotingException {
+        // 做一个思考
+        // 咱们，为什么需要不同的分发策略
+        // 根据不同的情况是有关系的，direct，你的实际要执行的代码并没有外部数据库的io操作
+        // 你要是不关注网络连接和断开，关注的请求和响应的处理，message，execution
+        // 如果你要是对网络连接和端口特别关注，connection
+
+        // 有一个网络连接完成建立的事件，Channel就代表了一个网络连接的成功的建立
+        // 针对网络连接建立的事件，此时就会拿到一个业务线程池
         ExecutorService executor = getSharedExecutorService();
         try {
+            // 线程池提进去以后，后续就会运行你的封装的一个线程任务
             executor.execute(new ChannelEventRunnable(channel, handler, ChannelState.CONNECTED));
         } catch (Throwable t) {
             throw new ExecutionException("connect event", channel, getClass() + " error when process connected event .", t);
@@ -47,6 +56,7 @@ public class AllChannelHandler extends WrappedChannelHandler {
 
     @Override
     public void disconnected(Channel channel) throws RemotingException {
+        // 如果要是发现跟一个consumer端的网络连接断开了，也是获取一个biz group
         ExecutorService executor = getSharedExecutorService();
         try {
             executor.execute(new ChannelEventRunnable(channel, handler, ChannelState.DISCONNECTED));
@@ -57,6 +67,7 @@ public class AllChannelHandler extends WrappedChannelHandler {
 
     @Override
     public void received(Channel channel, Object message) throws RemotingException {
+        // 如果是收到了一个请求的话，message
         ExecutorService executor = getPreferredExecutorService(message);
         try {
             executor.execute(new ChannelEventRunnable(channel, handler, ChannelState.RECEIVED, message));
@@ -71,6 +82,7 @@ public class AllChannelHandler extends WrappedChannelHandler {
 
     @Override
     public void caught(Channel channel, Throwable exception) throws RemotingException {
+        // 如果在网络通信过程中捕获到了一些异常
         ExecutorService executor = getSharedExecutorService();
         try {
             executor.execute(new ChannelEventRunnable(channel, handler, ChannelState.CAUGHT, exception));

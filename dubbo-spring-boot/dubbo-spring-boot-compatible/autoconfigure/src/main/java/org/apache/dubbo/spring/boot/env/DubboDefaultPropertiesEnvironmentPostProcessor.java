@@ -119,10 +119,9 @@ public class DubboDefaultPropertiesEnvironmentPostProcessor implements Environme
             PropertySource<?> source = propertySources.get(PROPERTY_SOURCE_NAME);
             if (source instanceof MapPropertySource) {
                 target = (MapPropertySource) source;
-                for (Map.Entry<String,Object> entry : map.entrySet()) {
-                    String key = entry.getKey();
+                for (String key : map.keySet()) {
                     if (!target.containsProperty(key)) {
-                        target.getSource().put(key, entry.getValue());
+                        target.getSource().put(key, map.get(key));
                     }
                 }
             }

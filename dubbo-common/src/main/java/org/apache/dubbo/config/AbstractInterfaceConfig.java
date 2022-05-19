@@ -18,10 +18,10 @@ package org.apache.dubbo.config;
 
 import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.Version;
+import org.apache.dubbo.common.bytecode.Wrapper;
 import org.apache.dubbo.common.config.ConfigurationUtils;
 import org.apache.dubbo.common.config.Environment;
 import org.apache.dubbo.common.config.InmemoryConfiguration;
-import org.apache.dubbo.common.utils.Assert;
 import org.apache.dubbo.common.utils.ClassUtils;
 import org.apache.dubbo.common.utils.CollectionUtils;
 import org.apache.dubbo.common.utils.ConfigUtils;
@@ -30,7 +30,6 @@ import org.apache.dubbo.common.utils.StringUtils;
 import org.apache.dubbo.config.context.ConfigManager;
 import org.apache.dubbo.config.support.Parameter;
 import org.apache.dubbo.rpc.model.ApplicationModel;
-import org.apache.dubbo.rpc.model.ModuleModel;
 import org.apache.dubbo.rpc.model.ScopeModel;
 import org.apache.dubbo.rpc.model.ScopeModelUtil;
 import org.apache.dubbo.rpc.model.ServiceMetadata;
@@ -67,32 +66,40 @@ public abstract class AbstractInterfaceConfig extends AbstractMethodConfig {
 
     /**
      * The interface name of the exported service
+     * 接口名称
      */
     protected String interfaceName;
 
     /**
      * The classLoader of interface belong to
+     * 接口类加载器
      */
     protected ClassLoader interfaceClassLoader;
 
     /**
      * The remote service version the customer/provider side will reference
+     * 版本号
      */
     protected String version;
 
     /**
      * The remote service group the customer/provider side will reference
+     * 服务分组
      */
     protected String group;
-    
+    /**
+     * 服务元数据
+     */
     protected ServiceMetadata serviceMetadata;
     /**
      * Local impl class name for the service interface
+     * 本地的实现类的类名
      */
     protected String local;
 
     /**
      * Local stub class name for the service interface
+     * 动态生成的接口的代理
      */
     protected String stub;
 
@@ -187,22 +194,8 @@ public abstract class AbstractInterfaceConfig extends AbstractMethodConfig {
 
     protected String tag;
 
-    private Boolean auth;
+    private  Boolean auth;
 
-    /*Indicates to create separate instances or not for services/references that have the same serviceKey.
-     * By default, all services/references that have the same serviceKey will share the same instance and process.
-     *
-     * This key currently can only work when using ReferenceConfig and SimpleReferenceCache together.
-     * Call ReferenceConfig.get() directly will not check this attribute.
-     */
-    private Boolean singleton;
-
-    public AbstractInterfaceConfig() {
-    }
-
-    public AbstractInterfaceConfig(ModuleModel moduleModel) {
-        super(moduleModel);
-    }
 
     /**
      * The url of the reference service
@@ -283,8 +276,7 @@ public abstract class AbstractInterfaceConfig extends AbstractMethodConfig {
     protected void appendMetricsCompatible(Map<String, String> map) {
         MetricsConfig metricsConfig = getConfigManager().getMetrics().orElse(null);
         if (metricsConfig != null) {
-            if (metricsConfig.getProtocol() != null && !StringUtils.isEquals(metricsConfig.getProtocol(), PROTOCOL_PROMETHEUS)) {
-                Assert.notEmptyString(metricsConfig.getPort(), "Metrics port cannot be null");
+            if (!metricsConfig.getProtocol().equals(PROTOCOL_PROMETHEUS)) {
                 map.put("metrics.protocol", metricsConfig.getProtocol());
                 map.put("metrics.port", metricsConfig.getPort());
             }
@@ -301,7 +293,7 @@ public abstract class AbstractInterfaceConfig extends AbstractMethodConfig {
         if (isNative) {
             return Arrays.stream(interfaceClass.getMethods()).map(Method::getName).toArray(String[]::new);
         } else {
-            return ClassUtils.getMethodNames(interfaceClass);
+            return Wrapper.getWrapper(interfaceClass).getMethodNames();
         }
     }
 
@@ -309,10 +301,17 @@ public abstract class AbstractInterfaceConfig extends AbstractMethodConfig {
         return getScopeModel().getModelEnvironment();
     }
 
+    /**
+     * 最最核心的，就是通过反射技术，对我们暴露的接口、方法和参数进行反射
+     * 把方法和参数都进行MethodConfig、ArgumentConfig的一个封装，包括做一些校验处理
+     * @param preferredPrefix
+     * @param subPropsConfiguration
+     */
     @Override
     protected void processExtraRefresh(String preferredPrefix, InmemoryConfiguration subPropsConfiguration) {
         if (StringUtils.hasText(interfaceName)) {
-            Class<?> interfaceClass;
+            // 先通过反射技术，拿到了我们的对外暴露服务的接口
+            Class<?> interfaceClass = null;
             try {
                 interfaceClass = ClassUtils.forName(interfaceName);
             } catch (ClassNotFoundException e) {
@@ -325,30 +324,36 @@ public abstract class AbstractInterfaceConfig extends AbstractMethodConfig {
 
             // Auto create MethodConfig/ArgumentConfig according to config props
             Map<String, String> configProperties = subPropsConfiguration.getProperties();
-            Method[] methods;
-            try {
-                methods = interfaceClass.getMethods();
-            } catch (Throwable e) {
-                // NoClassDefFoundError may be thrown if interface class's dependency jar is missing
-                return;
-            }
+            // 获取到我们对外暴露的接口的各种方法
+            Method[] methods = interfaceClass.getMethods();
 
+            // 现在其实是在对你的暴露服务接口进行处理，通过java反射的技术拿到你的接口Class
+            // 以及你的接口Class里面的方法，每个方法其实就是一个当前的服务对外暴露的一个可以调用的小接口
             for (Method method : methods) {
                 if (ConfigurationUtils.hasSubProperties(configProperties, method.getName())) {
                     MethodConfig methodConfig = getMethodByName(method.getName());
+                    // 在这个过程中，非常关键的一点，就是说要把我们的接口里的每个方法都搞一个MethodConfig
+                    // 每个MethodConfig里，也都需要要一批ArgumentConfig
+                    // why？为什么要做这个事情呢？
+                    // 作为你的对外暴露的接口，后续要被人调用，肯定说是会需要访问以及知道你的方法和参数的一些情况
+                    // 总不可能每次都是进行反射调用，拿到method和args去进行处理
+                    // 还不如刚开始启动，就对你的接口进解析，拿到所有的method和args进行处理
+
                     // Add method config if not found
                     if (methodConfig == null) {
+                        // 会给对外暴露的接口里，每个方法，都会去创建一个对应的MethodConfig
                         methodConfig = new MethodConfig();
                         methodConfig.setName(method.getName());
                         this.addMethod(methodConfig);
                     }
+
                     // Add argument config
                     // dubbo.service.{interfaceName}.{methodName}.{arg-index}.xxx=xxx
                     java.lang.reflect.Parameter[] arguments = method.getParameters();
                     for (int i = 0; i < arguments.length; i++) {
                         if (getArgumentByIndex(methodConfig, i) == null &&
                             hasArgumentConfigProps(configProperties, methodConfig.getName(), i)) {
-
+                            // 就会对方法里的每个args参数都搞一个对应的ArgumentConfig
                             ArgumentConfig argumentConfig = new ArgumentConfig();
                             argumentConfig.setIndex(i);
                             methodConfig.addArgument(argumentConfig);
@@ -357,7 +362,8 @@ public abstract class AbstractInterfaceConfig extends AbstractMethodConfig {
                 }
             }
 
-            // refresh MethodConfigs
+            // refresh MethodConfigs，刚才解析出来的一些MethodConfig
+            // 这个步骤，属于上一个步骤的后置的处理，本质上来说，还是在延续对MethodConfig的一个处理
             List<MethodConfig> methodConfigs = this.getMethods();
             if (methodConfigs != null && methodConfigs.size() > 0) {
                 // whether ignore invalid method config
@@ -368,11 +374,12 @@ public abstract class AbstractInterfaceConfig extends AbstractMethodConfig {
                 Class<?> finalInterfaceClass = interfaceClass;
                 List<MethodConfig> validMethodConfigs = methodConfigs.stream().filter(methodConfig -> {
                     methodConfig.setParentPrefix(preferredPrefix);
-                    methodConfig.setScopeModel(getScopeModel());
+                    methodConfig.setScopeModel(getScopeModel()); // 在这里都要去关联一下model组件
                     methodConfig.refresh();
                     // verify method config
                     return verifyMethodConfig(methodConfig, finalInterfaceClass, ignoreInvalidMethodConfig);
                 }).collect(Collectors.toList());
+
                 this.setMethods(validMethodConfigs);
             }
         }
@@ -863,22 +870,14 @@ public abstract class AbstractInterfaceConfig extends AbstractMethodConfig {
     public SslConfig getSslConfig() {
         return getConfigManager().getSsl().orElse(null);
     }
-
-    public Boolean getSingleton() {
-        return singleton;
-    }
-
-    public void setSingleton(Boolean singleton) {
-        this.singleton = singleton;
-    }
-
+    
     protected void initServiceMetadata(AbstractInterfaceConfig interfaceConfig) {
         serviceMetadata.setVersion(getVersion(interfaceConfig));
         serviceMetadata.setGroup(getGroup(interfaceConfig));
         serviceMetadata.setDefaultGroup(getGroup(interfaceConfig));
         serviceMetadata.setServiceInterfaceName(getInterface());
     }
-
+    
     public String getGroup(AbstractInterfaceConfig interfaceConfig) {
         return StringUtils.isEmpty(getGroup()) ? (interfaceConfig != null ? interfaceConfig.getGroup() : getGroup()) : getGroup();
     }

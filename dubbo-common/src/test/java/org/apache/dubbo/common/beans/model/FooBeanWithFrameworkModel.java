@@ -16,12 +16,10 @@
  */
 package org.apache.dubbo.common.beans.model;
 
-import org.apache.dubbo.common.resource.Disposable;
 import org.apache.dubbo.rpc.model.FrameworkModel;
 
-public class FooBeanWithFrameworkModel implements Disposable {
+public class FooBeanWithFrameworkModel {
     private FrameworkModel frameworkModel;
-    private boolean destroyed;
 
     public FooBeanWithFrameworkModel(FrameworkModel frameworkModel) {
         this.frameworkModel = frameworkModel;
@@ -29,14 +27,5 @@ public class FooBeanWithFrameworkModel implements Disposable {
 
     public FrameworkModel getFrameworkModel() {
         return frameworkModel;
-    }
-
-    @Override
-    public void destroy() {
-        this.destroyed = true;
-    }
-
-    public boolean isDestroyed() {
-        return destroyed;
     }
 }

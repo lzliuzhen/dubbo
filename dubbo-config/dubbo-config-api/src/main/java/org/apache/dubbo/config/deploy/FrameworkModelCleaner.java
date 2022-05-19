@@ -23,21 +23,12 @@ import org.apache.dubbo.rpc.Protocol;
 import org.apache.dubbo.rpc.model.FrameworkModel;
 import org.apache.dubbo.rpc.model.ScopeModelDestroyListener;
 
-import java.util.concurrent.atomic.AtomicBoolean;
-
 /**
  * A cleaner to release resources of framework model
  */
 public class FrameworkModelCleaner implements ScopeModelDestroyListener<FrameworkModel> {
 
     private static final Logger logger = LoggerFactory.getLogger(FrameworkModelCleaner.class);
-
-    private final AtomicBoolean protocolDestroyed = new AtomicBoolean(false);
-
-    @Override
-    public boolean isProtocol() {
-        return true;
-    }
 
     @Override
     public void onDestroy(FrameworkModel frameworkModel) {
@@ -56,19 +47,18 @@ public class FrameworkModelCleaner implements ScopeModelDestroyListener<Framewor
      * Destroy all the protocols.
      */
     private void destroyProtocols(FrameworkModel frameworkModel) {
-        if (protocolDestroyed.compareAndSet(false, true)) {
-            ExtensionLoader<Protocol> loader = frameworkModel.getExtensionLoader(Protocol.class);
-            for (String protocolName : loader.getLoadedExtensions()) {
-                try {
-                    Protocol protocol = loader.getLoadedExtension(protocolName);
-                    if (protocol != null) {
-                        protocol.destroy();
-                    }
-                } catch (Throwable t) {
-                    logger.warn(t.getMessage(), t);
+        ExtensionLoader<Protocol> loader = frameworkModel.getExtensionLoader(Protocol.class);
+        for (String protocolName : loader.getLoadedExtensions()) {
+            try {
+                Protocol protocol = loader.getLoadedExtension(protocolName);
+                if (protocol != null) {
+                    protocol.destroy();
                 }
+            } catch (Throwable t) {
+                logger.warn(t.getMessage(), t);
             }
         }
     }
+
 
 }

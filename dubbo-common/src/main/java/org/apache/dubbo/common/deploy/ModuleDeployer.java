@@ -17,20 +17,22 @@
 package org.apache.dubbo.common.deploy;
 
 import org.apache.dubbo.common.config.ReferenceCache;
+import org.apache.dubbo.config.ServiceConfigBase;
 import org.apache.dubbo.rpc.model.ModuleModel;
 
 import java.util.concurrent.Future;
 
 /**
  * Export/refer services of module
+ *
+ * 对一些其他的模块，管理其生命周期，初始化，启动，停止，预销毁，销毁后处理
+ *
  */
 public interface ModuleDeployer extends Deployer<ModuleModel> {
 
     void initialize() throws IllegalStateException;
 
     Future start() throws IllegalStateException;
-
-    Future getStartFuture();
 
     void stop() throws IllegalStateException;
 
@@ -45,6 +47,8 @@ public interface ModuleDeployer extends Deployer<ModuleModel> {
     void prepare();
 
     void setPending();
+
+    void notifyExportService(ServiceConfigBase<?> sc);
 
     /**
      * Whether start in background, do not await finish

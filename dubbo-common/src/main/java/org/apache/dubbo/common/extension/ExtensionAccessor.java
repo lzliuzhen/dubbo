@@ -21,6 +21,8 @@ package org.apache.dubbo.common.extension;
  */
 public interface ExtensionAccessor {
 
+    // 获取extension director组件，这个组件之后，深入剖析SPI的时候，我们再来仔细的看一下
+    // model组件体系剖析完毕了之后，就来剖析extenssion accessor
     ExtensionDirector getExtensionDirector();
 
     default <T> ExtensionLoader<T> getExtensionLoader(Class<T> type) {

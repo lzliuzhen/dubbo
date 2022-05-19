@@ -16,9 +16,6 @@
  */
 package org.apache.dubbo.remoting.api;
 
-import org.apache.dubbo.common.resource.GlobalResourceInitializer;
-import org.apache.dubbo.remoting.Constants;
-
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.epoll.Epoll;
 import io.netty.channel.epoll.EpollEventLoopGroup;
@@ -30,6 +27,8 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.util.concurrent.DefaultThreadFactory;
+import org.apache.dubbo.common.resource.GlobalResourceInitializer;
+import org.apache.dubbo.remoting.Constants;
 
 import java.util.concurrent.ThreadFactory;
 
@@ -48,6 +47,8 @@ public class NettyEventLoopFactory {
 
     public static EventLoopGroup eventLoopGroup(int threads, String threadFactoryName) {
         ThreadFactory threadFactory = new DefaultThreadFactory(threadFactoryName, true);
+        // 网络一些东西听的不太明白，大白话网络课程、nio课程、netty小课、jdk并发源码
+        // 以及基于nio手撸网络服务器，分布式海量小文件系统课程，分布式服务注册中心课程，都是基于nio手撸网络通信
         return shouldEpoll() ? new EpollEventLoopGroup(threads, threadFactory) :
                 new NioEventLoopGroup(threads, threadFactory);
     }

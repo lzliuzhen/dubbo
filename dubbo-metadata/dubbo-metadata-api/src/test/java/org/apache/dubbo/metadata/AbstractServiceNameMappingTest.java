@@ -17,17 +17,19 @@
 package org.apache.dubbo.metadata;
 
 import org.apache.dubbo.common.URL;
-import org.apache.dubbo.rpc.model.ApplicationModel;
-
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
+import java.util.SortedSet;
+import java.util.TreeSet;
 
 import static org.apache.dubbo.common.constants.RegistryConstants.PROVIDED_BY;
 import static org.apache.dubbo.common.constants.RegistryConstants.SUBSCRIBED_SERVICE_NAMES_KEY;
@@ -37,72 +39,57 @@ import static org.apache.dubbo.common.constants.RegistryConstants.SUBSCRIBED_SER
  */
 class AbstractServiceNameMappingTest {
 
-    private MockServiceNameMapping mapping = new MockServiceNameMapping(ApplicationModel.defaultModel());
-    private MockServiceNameMapping2 mapping2 = new MockServiceNameMapping2(ApplicationModel.defaultModel());
-
-    URL url = URL.valueOf("dubbo://127.0.0.1:21880/" + AbstractServiceNameMappingTest.class.getName());
+    private MockServiceNameMapping mapping = new MockServiceNameMapping();
+    private MockWritableMetadataService writableMetadataService = new MockWritableMetadataService();
 
     @BeforeEach
     public void setUp() throws Exception {
-    }
-
-    @AfterEach
-    public void clearup() throws Exception {
-        mapping.removeCachedMapping(ServiceNameMapping.buildMappingKey(url));
+        Field metadataService = mapping.getClass().getSuperclass().getDeclaredField("metadataService");
+        metadataService.setAccessible(true);
+        metadataService.set(mapping, writableMetadataService);
     }
 
     @Test
     void testGetServices() {
+        URL url = URL.valueOf("dubbo://127.0.0.1:21880/" + AbstractServiceNameMappingTest.class);
         url = url.addParameter(PROVIDED_BY, "app1,app2");
-        mapping.initInterfaceAppMapping(url);
-        Set<String> services = mapping.getCachedMapping(url);
+        Set<String> services = mapping.getServices(url);
         Assertions.assertTrue(services.contains("app1"));
         Assertions.assertTrue(services.contains("app2"));
 
-//        // remove mapping cache, check get() works.
-//        mapping.removeCachedMapping(ServiceNameMapping.buildMappingKey(url));
-//        services = mapping.initInterfaceAppMapping(url);
-//        Assertions.assertTrue(services.contains("remote-app1"));
-//        Assertions.assertTrue(services.contains("remote-app2"));
+        url = url.removeParameter(PROVIDED_BY);
+        services = mapping.getServices(url);
+        Assertions.assertTrue(services.contains("remote-app1"));
+        Assertions.assertTrue(services.contains("remote-app2"));
 
 
-        Assertions.assertNotNull(mapping.getCachedMapping(url));
-        Assertions.assertIterableEquals(mapping.getCachedMapping(url), services);
+        Map<String, Set<String>> cachedMapping = writableMetadataService.getCachedMapping();
+        Assertions.assertNotNull(cachedMapping);
+        Assertions.assertTrue(cachedMapping.containsKey(ServiceNameMapping.buildMappingKey(url)));
+        Assertions.assertIterableEquals(cachedMapping.get(ServiceNameMapping.buildMappingKey(url)), services);
+
     }
 
     @Test
     public void testGetAndListener() {
+        URL url = URL.valueOf("dubbo://127.0.0.1:21880/" + AbstractServiceNameMappingTest.class);
         URL registryURL = URL.valueOf("registry://127.0.0.1:7777/test");
         registryURL = registryURL.addParameter(SUBSCRIBED_SERVICE_NAMES_KEY, "registry-app1");
 
-        Set<String> services = mapping2.getAndListen(registryURL, url, null);
+        Set<String> services = mapping.getAndListenServices(registryURL, url, null);
         Assertions.assertTrue(services.contains("registry-app1"));
 
-        // remove mapping cache, check get() works.
-        mapping2.removeCachedMapping(ServiceNameMapping.buildMappingKey(url));
-        mapping2.enabled = true;
-        services = mapping2.getAndListen(registryURL, url, new MappingListener() {
-            @Override
-            public void onEvent(MappingChangedEvent event) {
-
-            }
-
-            @Override
-            public void stop() {
-
-            }
+        mapping.enabled = true;
+        services = mapping.getAndListenServices(registryURL, url, event -> {
         });
         Assertions.assertTrue(services.contains("remote-app3"));
 
     }
 
+
     private class MockServiceNameMapping extends AbstractServiceNameMapping {
 
         public boolean enabled = false;
-
-        public MockServiceNameMapping(ApplicationModel applicationModel) {
-            super(applicationModel);
-        }
 
         @Override
         public Set<String> get(URL url) {
@@ -118,45 +105,93 @@ class AbstractServiceNameMappingTest {
         }
 
         @Override
-        protected void removeListener(URL url, MappingListener mappingListener) {
-
-        }
-
-        @Override
         public boolean map(URL url) {
             return false;
         }
     }
 
-    private class MockServiceNameMapping2 extends AbstractServiceNameMapping {
+    private class MockWritableMetadataService implements WritableMetadataService {
+        private final Map<String, Set<String>> serviceToAppsMapping = new HashMap<>();
 
-        public boolean enabled = false;
-
-        public MockServiceNameMapping2(ApplicationModel applicationModel) {
-            super(applicationModel);
+        @Override
+        public String serviceName() {
+            return null;
         }
 
         @Override
-        public Set<String> get(URL url) {
-            return Collections.emptySet();
+        public SortedSet<String> getExportedURLs(String serviceInterface, String group, String version, String protocol) {
+            return null;
         }
 
         @Override
-        public Set<String> getAndListen(URL url, MappingListener mappingListener) {
-            if (!enabled) {
-                return Collections.emptySet();
-            }
-            return new HashSet<>(Arrays.asList("remote-app3"));
+        public String getServiceDefinition(String serviceKey) {
+            return null;
         }
 
         @Override
-        protected void removeListener(URL url, MappingListener mappingListener) {
-
+        public MetadataInfo getMetadataInfo(String revision) {
+            return null;
         }
 
         @Override
-        public boolean map(URL url) {
+        public Map<String, MetadataInfo> getMetadataInfos() {
+            return null;
+        }
+
+        @Override
+        public boolean exportURL(URL url) {
             return false;
+        }
+
+        @Override
+        public boolean unexportURL(URL url) {
+            return false;
+        }
+
+        @Override
+        public boolean subscribeURL(URL url) {
+            return false;
+        }
+
+        @Override
+        public boolean unsubscribeURL(URL url) {
+            return false;
+        }
+
+        @Override
+        public void publishServiceDefinition(URL url) {
+
+        }
+
+        @Override
+        public Set<String> getCachedMapping(String mappingKey) {
+            return serviceToAppsMapping.get(mappingKey);
+        }
+
+        @Override
+        public Set<String> getCachedMapping(URL consumerURL) {
+            String serviceKey = ServiceNameMapping.buildMappingKey(consumerURL);
+            return serviceToAppsMapping.get(serviceKey);
+        }
+
+        @Override
+        public Set<String> removeCachedMapping(String serviceKey) {
+            return serviceToAppsMapping.remove(serviceKey);
+        }
+
+        @Override
+        public void putCachedMapping(String serviceKey, Set<String> apps) {
+            serviceToAppsMapping.put(serviceKey, new TreeSet<>(apps));
+        }
+
+        @Override
+        public Map<String, Set<String>> getCachedMapping() {
+            return serviceToAppsMapping;
+        }
+
+        @Override
+        public MetadataInfo getDefaultMetadataInfo() {
+            return null;
         }
     }
 

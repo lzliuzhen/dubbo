@@ -16,8 +16,6 @@
  */
 package org.apache.dubbo.common.convert.multiple;
 
-import org.apache.dubbo.rpc.model.FrameworkModel;
-
 import java.util.HashSet;
 import java.util.Set;
 
@@ -27,9 +25,6 @@ import java.util.Set;
  * @since 2.7.6
  */
 public class StringToSetConverter extends StringToIterableConverter<Set> {
-    public StringToSetConverter(FrameworkModel frameworkModel) {
-        super(frameworkModel);
-    }
 
     @Override
     protected Set createMultiValue(int size, Class<?> multiValueType) {

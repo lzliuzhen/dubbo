@@ -30,7 +30,7 @@ import java.nio.ByteBuffer;
 
 public class NettyBackedChannelBuffer implements ChannelBuffer {
 
-    private final ByteBuf buffer;
+    private ByteBuf buffer;
 
     public NettyBackedChannelBuffer(ByteBuf buffer) {
         Assert.notNull(buffer, "buffer == null");
@@ -115,12 +115,9 @@ public class NettyBackedChannelBuffer implements ChannelBuffer {
 
     @Override
     public void setBytes(int index, ChannelBuffer src, int srcIndex, int length) {
-        if (length > src.readableBytes()) {
-            throw new IndexOutOfBoundsException();
-        }
         // careful
         byte[] data = new byte[length];
-        src.getBytes(srcIndex, data, 0, length);
+        buffer.getBytes(srcIndex, data, 0, length);
         setBytes(index, data, 0, length);
     }
 
@@ -156,6 +153,7 @@ public class NettyBackedChannelBuffer implements ChannelBuffer {
 
 
     // AbstractChannelBuffer
+
 
 
     @Override

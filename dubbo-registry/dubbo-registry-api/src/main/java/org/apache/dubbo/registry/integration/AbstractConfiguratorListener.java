@@ -89,10 +89,11 @@ public abstract class AbstractConfiguratorListener implements ConfigurationListe
                     ", raw config content is:\n " + event.getContent());
         }
 
-        if (event.getChangeType().equals(ConfigChangeType.DELETED)) {
+        if (event.getChangeType().equals(ConfigChangeType.ADDED)) {
+            return;
+        } else if (event.getChangeType().equals(ConfigChangeType.DELETED)) {
             configurators.clear();
         } else {
-            // ADDED or MODIFIED
             if (!genConfiguratorsFromRawRule(event.getContent())) {
                 return;
             }
@@ -102,21 +103,21 @@ public abstract class AbstractConfiguratorListener implements ConfigurationListe
     }
 
     private boolean genConfiguratorsFromRawRule(String rawConfig) {
-        List<URL> urls;
+        boolean parseSuccess = true;
         try {
             // parseConfigurators will recognize app/service config automatically.
-            urls = ConfigParser.parseConfigurators(rawConfig);
+            List<URL> urls = ConfigParser.parseConfigurators(rawConfig);
+            List<URL> safeUrls = urls.stream()
+                .map(url -> url.removeParameters(securityKey))
+                .map(url -> url.setScopeModel(moduleModel))
+                .collect(Collectors.toList());
+            configurators = Configurator.toConfigurators(safeUrls).orElse(configurators);
         } catch (Exception e) {
-            logger.warn("Failed to parse raw dynamic config and it will not take effect, the raw config is: "
-                    + rawConfig + ", cause: " + e.getMessage());
-            return false;
+            logger.error("Failed to parse raw dynamic config and it will not take effect, the raw config is: " +
+                    rawConfig, e);
+            parseSuccess = false;
         }
-        List<URL> safeUrls = urls.stream()
-            .map(url -> url.removeParameters(securityKey))
-            .map(url -> url.setScopeModel(moduleModel))
-            .collect(Collectors.toList());
-        configurators = Configurator.toConfigurators(safeUrls).orElse(configurators);
-        return true;
+        return parseSuccess;
     }
 
     protected abstract void notifyOverrides();

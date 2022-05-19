@@ -44,6 +44,11 @@ public class FailsafeClusterInvoker<T> extends AbstractClusterInvoker<T> {
 
     @Override
     public Result doInvoke(Invocation invocation, List<Invoker<T>> invokers, LoadBalance loadbalance) throws RpcException {
+        // 跟failfast类似的
+        // failsafe，如果调用失败的话，不用抛错，直接打印一个异常log日志就可以了
+        // 一般来说，比如说，你要是写一些类似于远程日志数据，审计数据，或者是一些可有可无的，可以丢失的一些数据
+        // 此时可以用failsafe
+
         try {
             checkInvokers(invokers, invocation);
             Invoker<T> invoker = select(loadbalance, invocation, invokers, null);

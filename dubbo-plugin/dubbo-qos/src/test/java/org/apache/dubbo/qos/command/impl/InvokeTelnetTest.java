@@ -16,6 +16,8 @@
  */
 package org.apache.dubbo.qos.command.impl;
 
+import io.netty.channel.Channel;
+import io.netty.util.DefaultAttributeMap;
 import org.apache.dubbo.config.bootstrap.DubboBootstrap;
 import org.apache.dubbo.qos.command.BaseCommand;
 import org.apache.dubbo.qos.command.CommandContext;
@@ -26,9 +28,6 @@ import org.apache.dubbo.rpc.model.ApplicationModel;
 import org.apache.dubbo.rpc.model.FrameworkModel;
 import org.apache.dubbo.rpc.model.ModuleServiceRepository;
 import org.apache.dubbo.rpc.model.ServiceDescriptor;
-
-import io.netty.channel.Channel;
-import io.netty.util.DefaultAttributeMap;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -66,14 +65,6 @@ public class InvokeTelnetTest {
     public void after() {
         frameworkModel.destroy();
         reset(mockChannel, mockCommandContext);
-    }
-
-    @Test
-    public void testInvokeWithoutServicePrefixAndWithoutDefaultService() throws RemotingException {
-        registerProvider(DemoService.class.getName(), new DemoServiceImpl(), DemoService.class);
-        String result = invoke.execute(mockCommandContext, new String[]{"echo(\"ok\")"});
-        assertTrue(result.contains("If you want to invoke like [invoke sayHello(\"xxxx\")], please execute cd command first," +
-            " or you can execute it like [invoke IHelloService.sayHello(\"xxxx\")]"));
     }
 
     @Test
@@ -124,7 +115,7 @@ public class InvokeTelnetTest {
 
     @Test
     public void testInvokeByPassingEnumValue() throws RemotingException {
-        defaultAttributeMap.attr(ChangeTelnet.SERVICE_KEY).set(DemoService.class.getName());
+        defaultAttributeMap.attr(ChangeTelnet.SERVICE_KEY).set(null);
         defaultAttributeMap.attr(SelectTelnet.SELECT_KEY).set(null);
 
         given(mockChannel.attr(ChangeTelnet.SERVICE_KEY)).willReturn(defaultAttributeMap.attr(ChangeTelnet.SERVICE_KEY));

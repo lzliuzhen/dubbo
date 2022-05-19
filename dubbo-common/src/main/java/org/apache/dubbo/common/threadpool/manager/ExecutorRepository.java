@@ -38,15 +38,7 @@ public interface ExecutorRepository {
      */
     ExecutorService createExecutorIfAbsent(URL url);
 
-    /**
-     * Be careful,The semantics of this method are getOrDefaultExecutor
-     *
-     * @param url
-     * @return
-     */
     ExecutorService getExecutor(URL url);
-
-
 
     /**
      * Modify some of the threadpool's properties according to the url, for example, coreSize, maxSize, ...
@@ -55,6 +47,16 @@ public interface ExecutorRepository {
      * @param executor
      */
     void updateThreadpool(URL url, ExecutorService executor);
+
+    /**
+     * Returns a scheduler from the scheduler list, call this method whenever you need a scheduler for a cron job.
+     * If your cron cannot burden the possible schedule delay caused by sharing the same scheduler, please consider define a dedicate one.
+     *
+     * @return
+     */
+    ScheduledExecutorService nextScheduledExecutor();
+
+    ExecutorService nextExecutorExecutor();
 
     ScheduledExecutorService getServiceExportExecutor();
 
@@ -72,100 +74,34 @@ public interface ExecutorRepository {
      */
     void shutdownServiceReferExecutor();
 
-    /**
-     * Destroy all executors that are not in shutdown state
-     */
-    void destroyAll();
-
-    /**
-     * Returns a scheduler from the scheduler list, call this method whenever you need a scheduler for a cron job.
-     * If your cron cannot burden the possible schedule delay caused by sharing the same scheduler, please consider define a dedicate one.
-     *
-     * @deprecated use {@link FrameworkExecutorRepository#nextScheduledExecutor()} instead
-     * @return ScheduledExecutorService
-     */
-    @Deprecated
-    ScheduledExecutorService nextScheduledExecutor();
-
-    /**
-     * @deprecated use {@link FrameworkExecutorRepository#nextExecutorExecutor()} instead
-     * @return ExecutorService
-     */
-    @Deprecated
-    ExecutorService nextExecutorExecutor();
-
-    /**
-     * @deprecated use {@link FrameworkExecutorRepository#getServiceDiscoveryAddressNotificationExecutor()} instead
-     * @return ScheduledExecutorService
-     */
-    @Deprecated
     ScheduledExecutorService getServiceDiscoveryAddressNotificationExecutor();
 
-    /**
-     * @deprecated use {@link FrameworkExecutorRepository#getMetadataRetryExecutor()} instead
-     * @return ScheduledExecutorService
-     */
-    @Deprecated
     ScheduledExecutorService getMetadataRetryExecutor();
 
     /**
      * Scheduled executor handle registry notification.
      *
-     * @deprecated use {@link FrameworkExecutorRepository#getRegistryNotificationExecutor()} instead
-     * @return ScheduledExecutorService
+     * @return
      */
-    @Deprecated
     ScheduledExecutorService getRegistryNotificationExecutor();
 
     /**
      * Get the default shared threadpool.
      *
-     * @deprecated use {@link FrameworkExecutorRepository#getSharedExecutor()} instead
-     * @return ScheduledExecutorService
+     * @return
      */
-    @Deprecated
     ExecutorService getSharedExecutor();
 
     /**
      * Get the shared schedule executor
-     *
-     * @deprecated use {@link FrameworkExecutorRepository#getSharedScheduledExecutor()} instead
-     * @return ScheduledExecutorService
+     * @return
      */
-    @Deprecated
     ScheduledExecutorService getSharedScheduledExecutor();
 
-    /**
-     * @deprecated use {@link FrameworkExecutorRepository#getPoolRouterExecutor()} instead
-     * @return ExecutorService
-     */
-    @Deprecated
     ExecutorService getPoolRouterExecutor();
 
     /**
-     * Scheduled executor handle connectivity check task
-     *
-     * @deprecated use {@link FrameworkExecutorRepository#getConnectivityScheduledExecutor()} instead
-     * @return ScheduledExecutorService
+     * Destroy all executors that are not in shutdown state
      */
-    @Deprecated
-    ScheduledExecutorService getConnectivityScheduledExecutor();
-
-    /**
-     * Scheduler used to refresh file based caches from memory to disk.
-     *
-     * @deprecated use {@link FrameworkExecutorRepository#getCacheRefreshingScheduledExecutor()} instead
-     * @return ScheduledExecutorService
-     */
-    @Deprecated
-    ScheduledExecutorService getCacheRefreshingScheduledExecutor();
-
-    /**
-     * Executor used to run async mapping tasks
-     *
-     * @deprecated use {@link FrameworkExecutorRepository#getMappingRefreshingExecutor()} instead
-     * @return ExecutorService
-     */
-    @Deprecated
-    ExecutorService getMappingRefreshingExecutor();
+    void destroyAll();
 }

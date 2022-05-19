@@ -20,12 +20,12 @@ import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.utils.StringUtils;
 import org.apache.dubbo.rpc.Invocation;
 import org.apache.dubbo.rpc.Invoker;
-import org.apache.dubbo.rpc.cluster.ClusterInvoker;
 
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static org.apache.dubbo.common.constants.CommonConstants.TIMESTAMP_KEY;
+import static org.apache.dubbo.common.constants.RegistryConstants.REGISTRY_KEY;
 import static org.apache.dubbo.common.constants.RegistryConstants.REGISTRY_SERVICE_REFERENCE_PATH;
 import static org.apache.dubbo.rpc.cluster.Constants.WEIGHT_KEY;
 
@@ -52,11 +52,17 @@ public class RandomLoadBalance extends AbstractLoadBalance {
     @Override
     protected <T> Invoker<T> doSelect(List<Invoker<T>> invokers, URL url, Invocation invocation) {
         // Number of invokers
+        // 先拿到你的目标服务实例集群的invokers数量
         int length = invokers.size();
 
         if (!needWeightLoadBalance(invokers,invocation)){
+            // 举个例子，直接基于一个随机的类，nextInt，拿到invokers数量范围之内的机器对应的invoker
             return invokers.get(ThreadLocalRandom.current().nextInt(length));
         }
+
+        // 什么叫做权重？
+        // invokers，他们被调用到的机会/几率是相同的
+        // 权重越高的invoker，他被调用的几率会越高一些
 
         // Every invoker has the same weight?
         boolean sameWeight = true;
@@ -76,6 +82,7 @@ public class RandomLoadBalance extends AbstractLoadBalance {
         }
         if (totalWeight > 0 && !sameWeight) {
             // If (not every invoker has the same weight & at least one invoker's weight>0), select randomly based on totalWeight.
+            // 在这里肯定是有一个随机的概念的
             int offset = ThreadLocalRandom.current().nextInt(totalWeight);
             // Return a invoker based on the random value.
             for (int i = 0; i < length; i++) {
@@ -92,13 +99,9 @@ public class RandomLoadBalance extends AbstractLoadBalance {
 
         Invoker invoker = invokers.get(0);
         URL invokerUrl = invoker.getUrl();
-        if (invoker instanceof ClusterInvoker) {
-            invokerUrl = ((ClusterInvoker<?>) invoker).getRegistryUrl();
-        }
-
         // Multiple registry scenario, load balance among multiple registries.
         if (REGISTRY_SERVICE_REFERENCE_PATH.equals(invokerUrl.getServiceInterface())) {
-            String weight = invokerUrl.getParameter(WEIGHT_KEY);
+            String weight = invokerUrl.getParameter(REGISTRY_KEY + "." + WEIGHT_KEY);
             if (StringUtils.isNotEmpty(weight)) {
                 return true;
             }
@@ -113,6 +116,7 @@ public class RandomLoadBalance extends AbstractLoadBalance {
                 }
             }
         }
+
         return false;
     }
 

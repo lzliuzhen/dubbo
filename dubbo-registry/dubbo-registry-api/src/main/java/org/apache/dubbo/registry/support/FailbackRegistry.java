@@ -36,37 +36,46 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 
+import static org.apache.dubbo.common.constants.CommonConstants.FILE_KEY;
 import static org.apache.dubbo.registry.Constants.DEFAULT_REGISTRY_RETRY_PERIOD;
 import static org.apache.dubbo.registry.Constants.REGISTRY_RETRY_PERIOD_KEY;
 
 /**
  * FailbackRegistry. (SPI, Prototype, ThreadSafe)
+ *
+ * 这个纯粹就是一个failback，所以说我们推测，他其实就是一个支持故障和重试的一级类体系
+ *
  */
 public abstract class FailbackRegistry extends AbstractRegistry {
 
     /*  retry task map */
-
+    // URL -> Task，url就代表了一个provider或者是一个consumer
+    // 针对某个provider/consumer，在执行register的时候，如果说失败了，此时是否会用url -> task的方式，放到map里来缓存
+    // 针对unregistered、subscribed、unsubscribed，同样也是说，会有一些url的失败时候的任务的缓存
     private final ConcurrentMap<URL, FailedRegisteredTask> failedRegistered = new ConcurrentHashMap<URL, FailedRegisteredTask>();
-
     private final ConcurrentMap<URL, FailedUnregisteredTask> failedUnregistered = new ConcurrentHashMap<URL, FailedUnregisteredTask>();
-
     private final ConcurrentMap<Holder, FailedSubscribedTask> failedSubscribed = new ConcurrentHashMap<Holder, FailedSubscribedTask>();
-
     private final ConcurrentMap<Holder, FailedUnsubscribedTask> failedUnsubscribed = new ConcurrentHashMap<Holder, FailedUnsubscribedTask>();
 
     /**
      * The time in milliseconds the retryExecutor will wait
+     * 重试时间间隔周期
      */
     private final int retryPeriod;
 
     // Timer for failure retry, regular check if there is a request for failure, and if there is, an unlimited retry
+    // 你可以认为用时间轮的算法和机制，可以支持大量的定时任务放到时间轮里去，时间轮自己就是一直跟着时间在转
+    // 转到指定时间的时候，此时就会执行你的定时任务
     private final HashedWheelTimer retryTimer;
 
     public FailbackRegistry(URL url) {
+        // AbstractRegistry的构造函数执行完毕，从磁盘文件里加载缓存数据
+        // 继续走父类的构造函数
         super(url);
+        // 提取一下retry period时间周期，默认重试周期是5秒
         this.retryPeriod = url.getParameter(REGISTRY_RETRY_PERIOD_KEY, DEFAULT_REGISTRY_RETRY_PERIOD);
-
         // since the retry task will not be very much. 128 ticks is enough.
+        // hash时间轮，就是直接做一个构建就可以了
         retryTimer = new HashedWheelTimer(new NamedThreadFactory("DubboRegistryRetryTimer", true), retryPeriod, TimeUnit.MILLISECONDS, 128);
     }
 
@@ -97,6 +106,7 @@ public abstract class FailbackRegistry extends AbstractRegistry {
         oldOne = failedRegistered.putIfAbsent(url, newTask);
         if (oldOne == null) {
             // never has a retry task. then start a new task for retry.
+            // 开启定时器，放你的重试任务放到你的时间轮里去，定时5秒后重试
             retryTimer.newTimeout(newTask, retryPeriod, TimeUnit.MILLISECONDS);
         }
     }
@@ -190,15 +200,21 @@ public abstract class FailbackRegistry extends AbstractRegistry {
     }
 
 
+    // 刚开始执行注册操作，此时会向上穿透父类，一直穿透到failback这儿来
     @Override
     public void register(URL url) {
         if (!acceptable(url)) {
-            logger.info("URL " + url + " will not be registered to Registry. Registry " + this.getUrl() + " does not accept service of this protocol type.");
+            logger.info("URL " + url + " will not be registered to Registry. Registry " + url + " does not accept service of this protocol type.");
             return;
         }
+
+        // 主动向上再穿透，穿透到abstract父类里去执行注册操作
         super.register(url);
+
+        // 先把这个url已经失败的注册和取消注册的任务都进行清理（必要性清理）
         removeFailedRegistered(url);
         removeFailedUnregistered(url);
+
         try {
             // Sending a registration request to the server side
             doRegister(url);
@@ -206,6 +222,7 @@ public abstract class FailbackRegistry extends AbstractRegistry {
             Throwable t = e;
 
             // If the startup detection is opened, the Exception is thrown directly.
+            // 获取一个check参数，是由多个cache参数和port计算而来的
             boolean check = getUrl().getParameter(Constants.CHECK_KEY, true)
                     && url.getParameter(Constants.CHECK_KEY, true)
                     && !(url.getPort() == 0);
@@ -220,6 +237,7 @@ public abstract class FailbackRegistry extends AbstractRegistry {
             }
 
             // Record a failed registration request to a failed list, retry regularly
+            // 执行failback机制，就是先保存起来你的故障，然后后续再定时重试
             addFailedRegistered(url);
         }
     }
@@ -290,7 +308,9 @@ public abstract class FailbackRegistry extends AbstractRegistry {
 
     @Override
     public void subscribe(URL url, NotifyListener listener) {
+        // 先去走抽象父类的订阅过程
         super.subscribe(url, listener);
+
         removeFailedSubscribed(url, listener);
         try {
             // Sending a subscription request to the server side
@@ -301,7 +321,7 @@ public abstract class FailbackRegistry extends AbstractRegistry {
             List<URL> urls = getCacheUrls(url);
             if (CollectionUtils.isNotEmpty(urls)) {
                 notify(url, listener, urls);
-                logger.error("Failed to subscribe " + url + ", Using cached list: " + urls + " from cache file: " + getCacheFile().getName() + ", cause: " + t.getMessage(), t);
+                logger.error("Failed to subscribe " + url + ", Using cached list: " + urls + " from cache file: " + getUrl().getParameter(FILE_KEY, System.getProperty("user.home") + "/dubbo-registry-" + url.getHost() + ".cache") + ", cause: " + t.getMessage(), t);
             } else {
                 // If the startup detection is opened, the Exception is thrown directly.
                 boolean check = getUrl().getParameter(Constants.CHECK_KEY, true)
@@ -352,6 +372,9 @@ public abstract class FailbackRegistry extends AbstractRegistry {
 
     @Override
     protected void notify(URL url, NotifyListener listener, List<URL> urls) {
+        // 在订阅和发现的时候，此时必然会直接定位到一堆providers集群地址
+        // 这些地址，必须做一个处理，要存储在自己内部，存储的时候，就是必须方便后续directory
+        // 如果要拿到我们对应的一些集群地址，就必须随时可以拿到
         if (url == null) {
             throw new IllegalArgumentException("notify url == null");
         }
@@ -372,6 +395,10 @@ public abstract class FailbackRegistry extends AbstractRegistry {
 
     @Override
     protected void recover() throws Exception {
+        // 此时会话都是重新建立起来的，会话一旦断了，你自己就认为在zk端存储的provider/consumer的服务实例url节点都没了
+        // 包括你施加的监听器也么了
+        // 此时就必须重新去进行注册和订阅发现，都是去复用failback的重试机制和策略在里面
+
         // register
         Set<URL> recoverRegistered = new HashSet<URL>(getRegistered());
         if (!recoverRegistered.isEmpty()) {

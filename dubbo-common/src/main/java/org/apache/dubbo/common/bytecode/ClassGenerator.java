@@ -16,10 +16,6 @@
  */
 package org.apache.dubbo.common.bytecode;
 
-import org.apache.dubbo.common.utils.ArrayUtils;
-import org.apache.dubbo.common.utils.ReflectUtils;
-import org.apache.dubbo.common.utils.StringUtils;
-
 import javassist.CannotCompileException;
 import javassist.ClassPool;
 import javassist.CtClass;
@@ -28,8 +24,10 @@ import javassist.CtField;
 import javassist.CtMethod;
 import javassist.CtNewConstructor;
 import javassist.CtNewMethod;
-import javassist.LoaderClassPath;
 import javassist.NotFoundException;
+import org.apache.dubbo.common.utils.ArrayUtils;
+import org.apache.dubbo.common.utils.ReflectUtils;
+import org.apache.dubbo.common.utils.StringUtils;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
@@ -93,8 +91,7 @@ public final class ClassGenerator {
         ClassPool pool = POOL_MAP.get(loader);
         if (pool == null) {
             pool = new ClassPool(true);
-            pool.insertClassPath(new LoaderClassPath(loader));
-            pool.insertClassPath(new DubboLoaderClassPath());
+            pool.insertClassPath(new CustomizedLoaderClassPath(loader));
             POOL_MAP.put(loader, pool);
         }
         return pool;
@@ -284,17 +281,12 @@ public final class ClassGenerator {
         return mPool;
     }
 
-    /**
-     * @param neighbor    A class belonging to the same package that this
-     *                    class belongs to.  It is used to load the class.
-     */
-    public Class<?> toClass(Class<?> neighbor) {
-        return toClass(neighbor,
-            mClassLoader,
-            getClass().getProtectionDomain());
+    public Class<?> toClass() {
+        return toClass(mClassLoader,
+                getClass().getProtectionDomain());
     }
 
-    public Class<?> toClass(Class<?> neighborClass, ClassLoader loader, ProtectionDomain pd) {
+    public Class<?> toClass(ClassLoader loader, ProtectionDomain pd) {
         if (mCtc != null) {
             mCtc.detach();
         }
@@ -305,15 +297,17 @@ public final class ClassGenerator {
                 mClassName = (mSuperClass == null || javassist.Modifier.isPublic(ctcs.getModifiers())
                         ? ClassGenerator.class.getName() : mSuperClass + "$sc") + id;
             }
+            // ClassPool是javassist源码，我们不可能继续去看了，dubbo默认情况下创建Wrapper包装类
+            // 动态拼接类代码字符串，直接对类代码字符串，使用javassist进行动态类生成
             mCtc = mPool.makeClass(mClassName);
             if (mSuperClass != null) {
                 mCtc.setSuperclass(ctcs);
             }
             mCtc.addInterface(mPool.get(DC.class.getName())); // add dynamic class tag.
             if (mInterfaces != null) {
-                for (String cl : mInterfaces) {
-                    mCtc.addInterface(mPool.get(cl));
-                }
+                    for (String cl : mInterfaces) {
+                        mCtc.addInterface(mPool.get(cl));
+                    }
             }
             if (mFields != null) {
                 for (String code : mFields) {
@@ -333,6 +327,9 @@ public final class ClassGenerator {
             if (mDefaultConstructor) {
                 mCtc.addConstructor(CtNewConstructor.defaultConstructor(mCtc));
             }
+
+            // 任何一个类，就这点东西：类、接口、父类、field、方法、构造函数
+
             if (mConstructors != null) {
                 for (String code : mConstructors) {
                     if (code.charAt(0) == ':') {
@@ -346,14 +343,8 @@ public final class ClassGenerator {
                 }
             }
 
-            try {
-                return mPool.toClass(mCtc, neighborClass, loader, pd);
-            } catch (Throwable t) {
-                if (!(t instanceof CannotCompileException)) {
-                    return mPool.toClass(mCtc, loader, pd);
-                }
-                throw t;
-            }
+            // 最终就可以把你需要的Wrapper类给动态的创建出来
+            return mCtc.toClass(loader, pd);
         } catch (RuntimeException e) {
             throw e;
         } catch (NotFoundException | CannotCompileException e) {

@@ -24,7 +24,6 @@ import org.apache.dubbo.spring.boot.actuate.endpoint.DubboServicesMetadataEndpoi
 import org.apache.dubbo.spring.boot.actuate.endpoint.DubboShutdownEndpoint;
 import org.apache.dubbo.spring.boot.actuate.endpoint.condition.CompatibleConditionalOnEnabledEndpoint;
 
-import org.springframework.boot.actuate.autoconfigure.endpoint.condition.ConditionalOnAvailableEndpoint;
 import org.springframework.boot.actuate.endpoint.annotation.Endpoint;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
@@ -46,7 +45,6 @@ public class DubboEndpointAnnotationAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnAvailableEndpoint
     @CompatibleConditionalOnEnabledEndpoint
     public DubboMetadataEndpoint dubboEndpoint() {
         return new DubboMetadataEndpoint();
@@ -54,7 +52,6 @@ public class DubboEndpointAnnotationAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnAvailableEndpoint
     @CompatibleConditionalOnEnabledEndpoint
     public DubboConfigsMetadataEndpoint dubboConfigsMetadataEndpoint() {
         return new DubboConfigsMetadataEndpoint();
@@ -62,7 +59,6 @@ public class DubboEndpointAnnotationAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnAvailableEndpoint
     @CompatibleConditionalOnEnabledEndpoint
     public DubboPropertiesMetadataEndpoint dubboPropertiesEndpoint() {
         return new DubboPropertiesMetadataEndpoint();
@@ -70,7 +66,6 @@ public class DubboEndpointAnnotationAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnAvailableEndpoint
     @CompatibleConditionalOnEnabledEndpoint
     public DubboReferencesMetadataEndpoint dubboReferencesMetadataEndpoint() {
         return new DubboReferencesMetadataEndpoint();
@@ -78,7 +73,6 @@ public class DubboEndpointAnnotationAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnAvailableEndpoint
     @CompatibleConditionalOnEnabledEndpoint
     public DubboServicesMetadataEndpoint dubboServicesMetadataEndpoint() {
         return new DubboServicesMetadataEndpoint();
@@ -86,7 +80,6 @@ public class DubboEndpointAnnotationAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnAvailableEndpoint
     @CompatibleConditionalOnEnabledEndpoint
     public DubboShutdownEndpoint dubboShutdownEndpoint() {
         return new DubboShutdownEndpoint();

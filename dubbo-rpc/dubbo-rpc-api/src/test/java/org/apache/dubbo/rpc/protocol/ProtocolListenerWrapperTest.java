@@ -24,7 +24,6 @@ import org.apache.dubbo.rpc.Protocol;
 import org.apache.dubbo.rpc.Result;
 import org.apache.dubbo.rpc.listener.ListenerInvokerWrapper;
 import org.apache.dubbo.rpc.proxy.DemoService;
-
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 

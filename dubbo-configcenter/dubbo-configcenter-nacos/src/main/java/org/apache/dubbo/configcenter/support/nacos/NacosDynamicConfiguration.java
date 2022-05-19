@@ -17,17 +17,6 @@
 
 package org.apache.dubbo.configcenter.support.nacos;
 
-import org.apache.dubbo.common.URL;
-import org.apache.dubbo.common.config.configcenter.ConfigChangeType;
-import org.apache.dubbo.common.config.configcenter.ConfigChangedEvent;
-import org.apache.dubbo.common.config.configcenter.ConfigItem;
-import org.apache.dubbo.common.config.configcenter.ConfigurationListener;
-import org.apache.dubbo.common.config.configcenter.DynamicConfiguration;
-import org.apache.dubbo.common.logger.Logger;
-import org.apache.dubbo.common.logger.LoggerFactory;
-import org.apache.dubbo.common.utils.MD5Utils;
-import org.apache.dubbo.common.utils.StringUtils;
-
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
@@ -38,6 +27,16 @@ import com.alibaba.nacos.api.config.listener.AbstractSharedListener;
 import com.alibaba.nacos.api.exception.NacosException;
 import com.alibaba.nacos.client.config.http.HttpAgent;
 import com.alibaba.nacos.common.http.HttpRestResult;
+import org.apache.dubbo.common.URL;
+import org.apache.dubbo.common.config.configcenter.ConfigChangeType;
+import org.apache.dubbo.common.config.configcenter.ConfigChangedEvent;
+import org.apache.dubbo.common.config.configcenter.ConfigItem;
+import org.apache.dubbo.common.config.configcenter.ConfigurationListener;
+import org.apache.dubbo.common.config.configcenter.DynamicConfiguration;
+import org.apache.dubbo.common.logger.Logger;
+import org.apache.dubbo.common.logger.LoggerFactory;
+import org.apache.dubbo.common.utils.MD5Utils;
+import org.apache.dubbo.common.utils.StringUtils;
 
 import java.lang.reflect.Field;
 import java.util.HashMap;
@@ -52,9 +51,7 @@ import java.util.concurrent.Executor;
 import java.util.stream.Stream;
 
 import static com.alibaba.nacos.api.PropertyKeyConst.ENCODE;
-import static com.alibaba.nacos.api.PropertyKeyConst.PASSWORD;
 import static com.alibaba.nacos.api.PropertyKeyConst.SERVER_ADDR;
-import static com.alibaba.nacos.api.PropertyKeyConst.USERNAME;
 import static java.util.Collections.emptyMap;
 import static org.apache.dubbo.common.constants.RemotingConstants.BACKUP_KEY;
 import static org.apache.dubbo.common.utils.StringConstantFieldValuePredicate.of;
@@ -87,8 +84,6 @@ public class NacosDynamicConfiguration implements DynamicConfiguration {
      * The map store the key to {@link NacosConfigListener} mapping
      */
     private final Map<String, NacosConfigListener> watchListenerMap;
-
-    private MD5Utils md5Utils = new MD5Utils();
 
     NacosDynamicConfiguration(URL url) {
         this.nacosProperties = buildNacosProperties(url);
@@ -149,12 +144,6 @@ public class NacosDynamicConfiguration implements DynamicConfiguration {
         Map<String, String> parameters = url.getParameters(of(PropertyKeyConst.class));
         // Put all parameters
         properties.putAll(parameters);
-        if (StringUtils.isNotEmpty(url.getUsername())){
-            properties.put(USERNAME, url.getUsername());
-        }
-        if (StringUtils.isNotEmpty(url.getPassword())){
-            properties.put(PASSWORD, url.getPassword());
-        }
     }
 
     private static void putPropertyIfAbsent(URL url, Properties properties, String propertyName) {
@@ -232,7 +221,7 @@ public class NacosDynamicConfiguration implements DynamicConfiguration {
         String content = getConfig(key, group);
         String casMd5 = "";
         if (StringUtils.isNotEmpty(content)) {
-            casMd5 = md5Utils.getMd5(content);
+            casMd5 = MD5Utils.getMd5(content);
         }
         return new ConfigItem(content, casMd5);
     }

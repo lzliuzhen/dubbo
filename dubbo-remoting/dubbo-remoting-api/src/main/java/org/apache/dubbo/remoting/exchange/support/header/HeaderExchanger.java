@@ -34,6 +34,8 @@ public class HeaderExchanger implements Exchanger {
 
     public static final String NAME = "header";
 
+    // NettyClient -> MultiMessageHandler -> HeartbeatHandler -> AllChannelHandler -> DecodeHandler -> HeaderExchangeHandler -> requestHandler
+    // HeaderExchangeClient -> NettyClient
     @Override
     public ExchangeClient connect(URL url, ExchangeHandler handler) throws RemotingException {
         return new HeaderExchangeClient(Transporters.connect(url, new DecodeHandler(new HeaderExchangeHandler(handler))), true);
@@ -41,6 +43,16 @@ public class HeaderExchanger implements Exchanger {
 
     @Override
     public ExchangeServer bind(URL url, ExchangeHandler handler) throws RemotingException {
+        // exchanger这一层，是属于让我们的上层的代码，把一些rpc invocation调用，转为请求/响应的模型，同步转异步
+        // 网络模型了，请求概念
+        // 必然是要把请求通过底层的网络框架发送出去的
+        // 在这个底层，你要获取到网络框架实现的server和client，去封装给exchanger组件底层里面去
+        // 不同的Transporter
+        // 在exchanger里面可以使用不同的网络技术的，netty、mina，这些都是属于网络通信的框架
+        // 对不同的网络技术，如果要把他们进行统一的封装，netty、mina不同的框架，他的用法和API都是不同的
+        // exchanger这一层，如果你把netty、mina他直接的API提供过去
+        // 必须要做一个Transporter这一层，封装、抽象和统一底层的网络框架的使用模型和标准
+        // exchanger这一层，直接基于transporter这一层 提供的标准模型来使用就可以了
         return new HeaderExchangeServer(Transporters.bind(url, new DecodeHandler(new HeaderExchangeHandler(handler))));
     }
 

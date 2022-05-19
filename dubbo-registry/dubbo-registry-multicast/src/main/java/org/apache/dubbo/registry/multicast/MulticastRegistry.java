@@ -27,7 +27,6 @@ import org.apache.dubbo.common.utils.NetUtils;
 import org.apache.dubbo.common.utils.UrlUtils;
 import org.apache.dubbo.registry.NotifyListener;
 import org.apache.dubbo.registry.support.FailbackRegistry;
-import org.apache.dubbo.rpc.model.ApplicationModel;
 
 import java.io.IOException;
 import java.net.DatagramPacket;
@@ -90,10 +89,6 @@ public class MulticastRegistry extends FailbackRegistry {
     private final int cleanPeriod;
 
     private volatile boolean admin = false;
-
-    public MulticastRegistry(URL url, ApplicationModel applicationModel) {
-        this(url);
-    }
 
     public MulticastRegistry(URL url) {
         super(url);

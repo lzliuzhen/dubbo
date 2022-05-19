@@ -16,13 +16,6 @@
  */
 package org.apache.dubbo.config;
 
-import demo.MultiClassLoaderService;
-import demo.MultiClassLoaderServiceImpl;
-import demo.MultiClassLoaderServiceRequest;
-import demo.MultiClassLoaderServiceResult;
-import javassist.CannotCompileException;
-import javassist.CtClass;
-import javassist.NotFoundException;
 import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.Version;
 import org.apache.dubbo.common.compiler.support.CtClassBuilder;
@@ -39,6 +32,8 @@ import org.apache.dubbo.config.bootstrap.DubboBootstrap;
 import org.apache.dubbo.config.context.ModuleConfigManager;
 import org.apache.dubbo.config.provider.impl.DemoServiceImpl;
 import org.apache.dubbo.registry.client.migration.MigrationInvoker;
+import org.apache.dubbo.registrycenter.RegistryCenter;
+import org.apache.dubbo.registrycenter.ZookeeperSingleRegistryCenter;
 import org.apache.dubbo.rpc.Exporter;
 import org.apache.dubbo.rpc.Invoker;
 import org.apache.dubbo.rpc.ProxyFactory;
@@ -51,15 +46,21 @@ import org.apache.dubbo.rpc.model.ModuleModel;
 import org.apache.dubbo.rpc.model.ServiceMetadata;
 import org.apache.dubbo.rpc.protocol.injvm.InjvmInvoker;
 import org.apache.dubbo.rpc.protocol.injvm.InjvmProtocol;
-import org.apache.dubbo.rpc.service.GenericService;
+
+import demo.MultiClassLoaderService;
+import demo.MultiClassLoaderServiceImpl;
+import demo.MultiClassLoaderServiceRequest;
+import demo.MultiClassLoaderServiceResult;
+import javassist.CannotCompileException;
+import javassist.CtClass;
+import javassist.NotFoundException;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledForJreRange;
-import org.junit.jupiter.api.condition.JRE;
 import org.mockito.Mockito;
 
 import java.io.File;
@@ -94,7 +95,6 @@ import static org.apache.dubbo.common.constants.CommonConstants.INTERFACE_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.LIVENESS_PROBE_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.METADATA_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.METADATA_SERVICE_PORT_KEY;
-import static org.apache.dubbo.common.constants.CommonConstants.METADATA_SERVICE_PROTOCOL_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.METHODS_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.PID_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.READINESS_PROBE_KEY;
@@ -112,6 +112,8 @@ import static org.apache.dubbo.common.constants.QosConstants.ACCEPT_FOREIGN_IP;
 import static org.apache.dubbo.common.constants.QosConstants.QOS_ENABLE;
 import static org.apache.dubbo.common.constants.QosConstants.QOS_HOST;
 import static org.apache.dubbo.common.constants.QosConstants.QOS_PORT;
+import static org.apache.dubbo.common.constants.RegistryConstants.REGISTRY_PUBLISH_INSTANCE_KEY;
+import static org.apache.dubbo.common.constants.RegistryConstants.REGISTRY_PUBLISH_INTERFACE_KEY;
 import static org.apache.dubbo.registry.Constants.REGISTER_IP_KEY;
 import static org.apache.dubbo.rpc.Constants.DEFAULT_STUB_EVENT;
 import static org.apache.dubbo.rpc.Constants.LOCAL_KEY;
@@ -125,11 +127,17 @@ public class ReferenceConfigTest {
     private static String zkUrl1;
     private static String zkUrl2;
     private static String registryUrl1;
+    private static RegistryCenter registryCenter1;
+    private static RegistryCenter registryCenter2;
 
     @BeforeAll
     public static void beforeAll() {
-        int zkServerPort1 = 2181;
-        int zkServerPort2 = 2182;
+        int zkServerPort1 = NetUtils.getAvailablePort(NetUtils.getRandomPort());
+        registryCenter1 = new ZookeeperSingleRegistryCenter(zkServerPort1);
+        registryCenter1.startup();
+        int zkServerPort2 = NetUtils.getAvailablePort(NetUtils.getRandomPort());
+        registryCenter2 = new ZookeeperSingleRegistryCenter(zkServerPort2);
+        registryCenter2.startup();
         zkUrl1 = "zookeeper://localhost:" + zkServerPort1;
         zkUrl2 = "zookeeper://localhost:" + zkServerPort2;
         registryUrl1 = "registry://localhost:" + zkServerPort1 + "?registry=zookeeper";
@@ -146,6 +154,12 @@ public class ReferenceConfigTest {
     public void tearDown() throws IOException {
         DubboBootstrap.reset();
         Mockito.framework().clearInlineMocks();
+    }
+
+    @AfterAll
+    public static void afterAll() {
+        registryCenter1.shutdown();
+        registryCenter2.shutdown();
     }
 
     /**
@@ -177,9 +191,10 @@ public class ReferenceConfigTest {
         applicationConfig.setRegisterConsumer(false);
         applicationConfig.setRepository("repository1");
         applicationConfig.setEnableFileCache(false);
+        applicationConfig.setPublishInstance(false);
+        applicationConfig.setPublishInterface(false);
         applicationConfig.setProtocol("dubbo");
         applicationConfig.setMetadataServicePort(88888);
-        applicationConfig.setMetadataServiceProtocol("tri");
         applicationConfig.setLivenessProbe("livenessProbe");
         applicationConfig.setReadinessProbe("readinessProb");
         applicationConfig.setStartupProbe("startupProbe");
@@ -313,10 +328,13 @@ public class ReferenceConfigTest {
             serviceMetadata.getAttachments().get("repository"));
         Assertions.assertEquals(applicationConfig.getEnableFileCache().toString(),
             serviceMetadata.getAttachments().get(REGISTRY_LOCAL_FILE_CACHE_ENABLED));
+        Assertions.assertEquals(applicationConfig.getPublishInstance().toString(),
+            serviceMetadata.getAttachments().get(REGISTRY_PUBLISH_INSTANCE_KEY));
+        Assertions.assertEquals(applicationConfig.getPublishInterface().toString(),
+            serviceMetadata.getAttachments().get(REGISTRY_PUBLISH_INTERFACE_KEY));
+        Assertions.assertTrue(serviceMetadata.getAttachments().containsKey(REGISTRY_PUBLISH_INTERFACE_KEY));
         Assertions.assertEquals(applicationConfig.getMetadataServicePort().toString(),
             serviceMetadata.getAttachments().get(METADATA_SERVICE_PORT_KEY));
-        Assertions.assertEquals(applicationConfig.getMetadataServiceProtocol().toString(),
-            serviceMetadata.getAttachments().get(METADATA_SERVICE_PROTOCOL_KEY));
         Assertions.assertEquals(applicationConfig.getLivenessProbe(),
             serviceMetadata.getAttachments().get(LIVENESS_PROBE_KEY));
         Assertions.assertEquals(applicationConfig.getReadinessProbe(),
@@ -721,6 +739,8 @@ public class ReferenceConfigTest {
 
         RegistryConfig registry = new RegistryConfig();
         registry.setAddress(zkUrl1);
+        ProtocolConfig protocol = new ProtocolConfig();
+        protocol.setName("injvm");
 
         ReferenceConfig<DemoService> rc = new ReferenceConfig<>();
         rc.setRegistry(registry);
@@ -825,8 +845,8 @@ public class ReferenceConfigTest {
 
         metaData = config.getMetaData();
         Assertions.assertEquals(2, metaData.size());
-        Assertions.assertEquals(String.valueOf(consumerConfig.getActives()), metaData.get("actives"));
-        Assertions.assertEquals(String.valueOf(config.isAsync()), metaData.get("async"));
+        Assertions.assertEquals("" + consumerConfig.getActives(), metaData.get("actives"));
+        Assertions.assertEquals("" + config.isAsync(), metaData.get("async"));
 
     }
 
@@ -847,22 +867,6 @@ public class ReferenceConfigTest {
         System.out.println("ReferenceConfig get prefixes cost: " + (end - start));
 
     }
-
-    @Test
-    public void testGenericAndInterfaceConflicts() {
-
-        ReferenceConfig referenceConfig = new ReferenceConfig();
-        referenceConfig.setInterface(DemoService.class);
-        referenceConfig.setGeneric("true");
-
-        DubboBootstrap.getInstance()
-            .application("demo app")
-            .reference(referenceConfig)
-            .initialize();
-
-        Assertions.assertEquals(GenericService.class, referenceConfig.getInterfaceClass());
-    }
-
 
     @Test
     public void testLargeReferences() throws InterruptedException {
@@ -1035,7 +1039,6 @@ public class ReferenceConfigTest {
     }
 
     @Test
-    @DisabledForJreRange(min = JRE.JAVA_16)
     public void testDifferentClassLoaderRequest() throws Exception {
         String basePath = DemoService.class.getProtectionDomain().getCodeSource().getLocation().getFile();
         basePath = java.net.URLDecoder.decode(basePath, "UTF-8");
@@ -1102,7 +1105,6 @@ public class ReferenceConfigTest {
         builder.setClassName(MultiClassLoaderServiceRequest.class.getName() + "A");
         builder.setSuperClassName(MultiClassLoaderServiceRequest.class.getName());
         CtClass cls = builder.build(classLoader);
-        // FIXME support JDK 17
         return cls.toClass(classLoader, JavassistCompiler.class.getProtectionDomain());
     }
 

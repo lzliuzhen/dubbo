@@ -16,6 +16,8 @@
  */
 package org.apache.dubbo.qos.command.impl;
 
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
 import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.utils.StringUtils;
 import org.apache.dubbo.qos.command.BaseCommand;
@@ -30,16 +32,12 @@ import org.apache.dubbo.rpc.RpcStatus;
 import org.apache.dubbo.rpc.model.FrameworkModel;
 import org.apache.dubbo.rpc.protocol.dubbo.DubboProtocol;
 
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelFuture;
-
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
 
 import static org.apache.dubbo.common.constants.CommonConstants.DEFAULT_TIMEOUT;
-import static org.apache.dubbo.qos.server.handler.QosProcessHandler.PROMPT;
 
 @Cmd(name = "count", summary = "Count the service.", example = {
     "count [service] [method] [times]"
@@ -71,13 +69,13 @@ public class CountTelnet implements BaseCommand {
         } else {
             method = args.length > 0 ? args[0] : null;
         }
-        if (StringUtils.isNumber(method)) {
+        if (StringUtils.isInteger(method)) {
             times = method;
             method = null;
         } else {
             times = args.length > 2 ? args[2] : "1";
         }
-        if (!StringUtils.isNumber(times)) {
+        if (!StringUtils.isInteger(times)) {
             return "Illegal times " + times + ", must be integer.";
         }
         final int t = Integer.parseInt(times);
@@ -94,6 +92,7 @@ public class CountTelnet implements BaseCommand {
             if (t > 0) {
                 final String mtd = method;
                 final Invoker<?> inv = invoker;
+                final String prompt = "telnet";
                 Thread thread = new Thread(() -> {
                     for (int i = 0; i < t; i++) {
                         String result = count(inv, mtd);
@@ -110,7 +109,7 @@ public class CountTelnet implements BaseCommand {
                         }
                     }
                     try {
-                        send(channel, "\r\n" + PROMPT);
+                        send(channel, "\r\n" + prompt + "> ");
                     } catch (RemotingException ignored) {
                     }
                 }, "TelnetCount");

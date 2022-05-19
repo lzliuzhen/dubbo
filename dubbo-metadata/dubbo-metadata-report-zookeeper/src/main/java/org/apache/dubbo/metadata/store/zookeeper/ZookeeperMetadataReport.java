@@ -16,11 +16,11 @@
  */
 package org.apache.dubbo.metadata.store.zookeeper;
 
+import com.google.gson.Gson;
 import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.config.configcenter.ConfigItem;
 import org.apache.dubbo.common.logger.Logger;
 import org.apache.dubbo.common.logger.LoggerFactory;
-import org.apache.dubbo.common.utils.JsonUtils;
 import org.apache.dubbo.common.utils.StringUtils;
 import org.apache.dubbo.metadata.MappingChangedEvent;
 import org.apache.dubbo.metadata.MappingListener;
@@ -35,7 +35,6 @@ import org.apache.dubbo.remoting.zookeeper.DataListener;
 import org.apache.dubbo.remoting.zookeeper.EventType;
 import org.apache.dubbo.remoting.zookeeper.ZookeeperClient;
 import org.apache.dubbo.remoting.zookeeper.ZookeeperTransporter;
-
 import org.apache.zookeeper.data.Stat;
 
 import java.util.ArrayList;
@@ -52,6 +51,14 @@ import static org.apache.dubbo.metadata.ServiceNameMapping.getAppNames;
 
 /**
  * ZookeeperMetadataReport
+ *
+ * 关于元数据的存储，很关键的，任何一个服务实例，都是需要具备自己的一些元数据的
+ * 如何对服务实例进行描述，接口名字、版本号、名称，诸如此类的一些东西
+ * 既然有了元数据之后，就必须有地方来存储元数据，对于很多的框架或者系统，元数据存储，在本地磁盘文件里的
+ * 如果是在本地磁盘文件里，就会导致一个问题，如果别人想要读取你的元数据，存放在你的本地磁盘
+ *
+ * dubbo才选择了，把他的注册中心，zk技术，作为configcenter，metadata report
+ *
  */
 public class ZookeeperMetadataReport extends AbstractMetadataReport {
 
@@ -60,6 +67,8 @@ public class ZookeeperMetadataReport extends AbstractMetadataReport {
     private final String root;
 
     ZookeeperClient zkClient;
+
+    private Gson gson = new Gson();
 
     private Map<String, MappingDataListener> casListenerMap = new ConcurrentHashMap<>();
 
@@ -129,6 +138,7 @@ public class ZookeeperMetadataReport extends AbstractMetadataReport {
     }
 
     private void storeMetadata(MetadataIdentifier metadataIdentifier, String v) {
+        // 就是根据一套规则，构建出来zk path，去做一个节点的创建，把元数据以json的格式，存储在了zk里面就可以了
         zkClient.create(getNodePath(metadataIdentifier), v, false);
     }
 
@@ -139,43 +149,24 @@ public class ZookeeperMetadataReport extends AbstractMetadataReport {
     @Override
     public void publishAppMetadata(SubscriberMetadataIdentifier identifier, MetadataInfo metadataInfo) {
         String path = getNodePath(identifier);
-        if (StringUtils.isBlank(zkClient.getContent(path)) && StringUtils.isNotEmpty(metadataInfo.getContent())) {
-            zkClient.create(path, metadataInfo.getContent(), false);
-        }
-    }
-
-    @Override
-    public void unPublishAppMetadata(SubscriberMetadataIdentifier identifier, MetadataInfo metadataInfo) {
-        String path = getNodePath(identifier);
-        if (StringUtils.isNotEmpty(zkClient.getContent(path))) {
-            zkClient.delete(path);
+        if (StringUtils.isBlank(zkClient.getContent(path))) {
+            zkClient.create(path, gson.toJson(metadataInfo), false);
         }
     }
 
     @Override
     public MetadataInfo getAppMetadata(SubscriberMetadataIdentifier identifier, Map<String, String> instanceMetadata) {
         String content = zkClient.getContent(getNodePath(identifier));
-        return JsonUtils.getGson().fromJson(content, MetadataInfo.class);
+        return gson.fromJson(content, MetadataInfo.class);
     }
 
     @Override
     public Set<String> getServiceAppMapping(String serviceKey, MappingListener listener, URL url) {
         String path = buildPathKey(DEFAULT_MAPPING_GROUP, serviceKey);
-        MappingDataListener mappingDataListener = casListenerMap.computeIfAbsent(path, _k -> {
-            MappingDataListener newMappingListener = new MappingDataListener(serviceKey, path);
-            zkClient.addDataListener(path, newMappingListener);
-            return newMappingListener;
-        });
-        mappingDataListener.addListener(listener);
-        return getAppNames(zkClient.getContent(path));
-    }
-
-    @Override
-    public void removeServiceAppMappingListener(String serviceKey, MappingListener listener) {
-        String path = buildPathKey(DEFAULT_MAPPING_GROUP, serviceKey);
-        if (null != casListenerMap.get(path)) {
-            removeCasServiceMappingListener(path, listener);
+        if (null == casListenerMap.get(path)) {
+            addCasServiceMappingListener(path, serviceKey, listener);
         }
+        return getAppNames(zkClient.getContent(path));
     }
 
     @Override
@@ -216,13 +207,10 @@ public class ZookeeperMetadataReport extends AbstractMetadataReport {
         return toRootDir() + group + PATH_SEPARATOR + serviceKey;
     }
 
-    private void removeCasServiceMappingListener(String path, MappingListener listener) {
-        MappingDataListener mappingDataListener = casListenerMap.get(path);
-        mappingDataListener.removeListener(listener);
-        if (mappingDataListener.isEmpty()) {
-            zkClient.removeDataListener(path, mappingDataListener);
-            casListenerMap.remove(path, mappingDataListener);
-        }
+    private void addCasServiceMappingListener(String path, String serviceKey, MappingListener listener) {
+        MappingDataListener mappingDataListener = casListenerMap.computeIfAbsent(path, _k -> new MappingDataListener(serviceKey, path));
+        mappingDataListener.addListener(listener);
+        zkClient.addDataListener(path, mappingDataListener);
     }
 
     private static class MappingDataListener implements DataListener {
@@ -239,14 +227,6 @@ public class ZookeeperMetadataReport extends AbstractMetadataReport {
 
         public void addListener(MappingListener listener) {
             this.listeners.add(listener);
-        }
-
-        public void removeListener(MappingListener listener) {
-            this.listeners.remove(listener);
-        }
-
-        public boolean isEmpty() {
-            return listeners.isEmpty();
         }
 
         @Override

@@ -34,19 +34,19 @@ public class MixinTest {
         ((I3) o).m3();
     }
 
-    public interface I1 {
+    interface I1 {
         void m1();
     }
 
-    public interface I2 {
+    interface I2 {
         void m2();
     }
 
-    public interface I3 {
+    interface I3 {
         void m3();
     }
 
-    public class C1 implements Mixin.MixinAware {
+    class C1 implements Mixin.MixinAware {
         public void m1() {
             System.out.println("c1.m1();");
         }
@@ -60,7 +60,7 @@ public class MixinTest {
         }
     }
 
-    public class C2 implements Mixin.MixinAware {
+    class C2 implements Mixin.MixinAware {
         public void m3() {
             System.out.println("c2.m3();");
         }

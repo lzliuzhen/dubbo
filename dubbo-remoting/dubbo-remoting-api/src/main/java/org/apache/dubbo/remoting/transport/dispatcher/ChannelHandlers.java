@@ -41,7 +41,11 @@ public class ChannelHandlers {
         INSTANCE = instance;
     }
 
+    // MultiMessageHandler -> HeartbeatHandler -> AllChannelHandler -> DecodeHandler -> HeaderExchangeHandler -> requestHandler
     protected ChannelHandler wrapInternal(ChannelHandler handler, URL url) {
+        // 在这里获取的是Dispatcher自适应扩展逻辑，javassist出的一个代理
+        // 在进行dispatch的时候，他会从url里提取dispatch这样的一个参数，提取出来了以后，就可以根据具体的参数值，去获取真正的实现类实例
+        // 再用真正的实现类的实例，去进行dispatch分发
         return new MultiMessageHandler(new HeartbeatHandler(url.getOrDefaultFrameworkModel().getExtensionLoader(Dispatcher.class)
                 .getAdaptiveExtension().dispatch(handler, url)));
     }

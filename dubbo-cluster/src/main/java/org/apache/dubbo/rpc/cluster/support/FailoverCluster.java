@@ -30,6 +30,7 @@ public class FailoverCluster extends AbstractCluster {
 
     @Override
     public <T> AbstractClusterInvoker<T> doJoin(Directory<T> directory) throws RpcException {
+        // cluster以后，要使用directory进行join，就是创建出一个cluster invoker，同时把directory封装给cluster invoker
         return new FailoverClusterInvoker<>(directory);
     }
 

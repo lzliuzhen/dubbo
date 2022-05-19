@@ -18,7 +18,6 @@ package org.apache.dubbo.registry.nacos;
 
 import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.utils.NetUtils;
-import org.apache.dubbo.config.ApplicationConfig;
 import org.apache.dubbo.registry.client.DefaultServiceInstance;
 import org.apache.dubbo.registry.client.ServiceInstance;
 import org.apache.dubbo.registry.client.event.ServiceInstancesChangedEvent;
@@ -72,14 +71,10 @@ public class NacosServiceDiscoveryTest {
 
     @BeforeEach
     public void init() throws Exception {
-        ApplicationModel applicationModel = ApplicationModel.defaultModel();
-        applicationModel.getApplicationConfigManager().setApplication(new ApplicationConfig(SERVICE_NAME));
-
         this.registryUrl = URL.valueOf("nacos://127.0.0.1:" + NetUtils.getAvailablePort());
-        registryUrl.setScopeModel(applicationModel);
+        registryUrl.setScopeModel(ApplicationModel.defaultModel());
 
-//        this.nacosServiceDiscovery = new NacosServiceDiscovery(SERVICE_NAME, registryUrl);
-        this.nacosServiceDiscovery = new NacosServiceDiscovery(applicationModel, registryUrl);
+        this.nacosServiceDiscovery = new NacosServiceDiscovery();
         Field namingService = nacosServiceDiscovery.getClass().getDeclaredField("namingService");
         namingService.setAccessible(true);
         namingServiceWrapper = mock(NacosNamingServiceWrapper.class);
@@ -115,9 +110,9 @@ public class NacosServiceDiscoveryTest {
 
     @Test
     public void testDoUnRegister() throws NacosException {
+        DefaultServiceInstance serviceInstance = createServiceInstance(SERVICE_NAME, LOCALHOST, NetUtils.getAvailablePort());
         // register
-        nacosServiceDiscovery.register(URL.valueOf("dubbo://10.0.2.3:20880/DemoService?interface=DemoService"));
-        nacosServiceDiscovery.register();
+        nacosServiceDiscovery.doRegister(serviceInstance);
 
         List<Instance> instances = new ArrayList<>();
         Instance instance1 = new Instance();
@@ -135,7 +130,7 @@ public class NacosServiceDiscoveryTest {
         assertEquals(3, namingServiceWrapper.getAllInstances(anyString(), anyString()).size());
 
         // unRegister
-        nacosServiceDiscovery.unregister();
+        nacosServiceDiscovery.doUnregister(serviceInstance);
     }
 
     @Test
@@ -171,9 +166,9 @@ public class NacosServiceDiscoveryTest {
                 }
             });
 
-        nacosServiceDiscovery.register();
-        nacosServiceDiscovery.update();
-        nacosServiceDiscovery.unregister();
+        nacosServiceDiscovery.register(createServiceInstance(SERVICE_NAME, LOCALHOST, 8082));
+        nacosServiceDiscovery.update(createServiceInstance(SERVICE_NAME, LOCALHOST, 8082));
+        nacosServiceDiscovery.unregister(createServiceInstance(SERVICE_NAME, LOCALHOST, 8082));
 
         assertTrue(serviceInstances.isEmpty());
     }

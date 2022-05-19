@@ -46,6 +46,9 @@ public class FixedThreadPool implements ThreadPool {
         String name = url.getParameter(THREAD_NAME_KEY, (String) url.getAttribute(THREAD_NAME_KEY, DEFAULT_THREAD_NAME));
         int threads = url.getParameter(THREADS_KEY, DEFAULT_THREADS);
         int queues = url.getParameter(QUEUES_KEY, DEFAULT_QUEUES);
+
+        // 如果大家想要轻松看懂这块，jdk并发包源码剖析的课程，需要去看一下的
+        // JDK并发包源码剖析里，线程安全的有界队列、无界队列
         return new ThreadPoolExecutor(threads, threads, 0, TimeUnit.MILLISECONDS,
                 queues == 0 ? new SynchronousQueue<Runnable>() :
                         (queues < 0 ? new LinkedBlockingQueue<Runnable>()

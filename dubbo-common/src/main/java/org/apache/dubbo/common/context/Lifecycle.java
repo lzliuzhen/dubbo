@@ -16,14 +16,12 @@
  */
 package org.apache.dubbo.common.context;
 
-import org.apache.dubbo.common.resource.Disposable;
-
 /**
  * The Lifecycle of Dubbo component
  *
  * @since 2.7.5
  */
-public interface Lifecycle extends Disposable {
+public interface Lifecycle {
 
     /**
      * Initialize the component before {@link #start() start}

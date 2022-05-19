@@ -26,6 +26,9 @@ import java.util.List;
 
 /**
  * Protocol. (API/SPI, Singleton, ThreadSafe)
+ *
+ * dubbo协议
+ *
  */
 @SPI(value = "dubbo", scope = ExtensionScope.FRAMEWORK)
 public interface Protocol {
@@ -40,9 +43,10 @@ public interface Protocol {
     /**
      * Export service for remote invocation: <br>
      * 1. Protocol should record request source address after receive a request:
+     * Protocol接收到一个请求之后，必须要记录下来请求的源地址
      * RpcContext.getServerAttachment().setRemoteAddress();<br>
      * 2. export() must be idempotent, that is, there's no difference between invoking once and invoking twice when
-     * export the same URL<br>
+     * export the same URL<br> 对同一个服务实例（url）发布一次和发布多次，是没有任何区别的
      * 3. Invoker instance is passed in by the framework, protocol needs not to care <br>
      *
      * @param <T>     Service type
@@ -61,6 +65,8 @@ public interface Protocol {
      * protocol sends remote request in the `Invoker` implementation. <br>
      * 3. When there's check=false set in URL, the implementation must not throw exception but try to recover when
      * connection fails.
+     *
+     * Protocol必须根据一个url和接口类型，获取到对应的Invoker
      *
      * @param <T>  Service type
      * @param type Service class

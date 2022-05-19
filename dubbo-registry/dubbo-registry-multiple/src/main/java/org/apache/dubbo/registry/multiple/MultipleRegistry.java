@@ -34,7 +34,6 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
-import static org.apache.dubbo.common.constants.CommonConstants.CHECK_KEY;
 import static org.apache.dubbo.common.constants.RegistryConstants.EMPTY_PROTOCOL;
 
 /**
@@ -86,15 +85,18 @@ public class MultipleRegistry extends AbstractRegistry {
     }
 
     protected void initServiceRegistry(URL url, Map<String, Registry> registryMap) {
+        // 从url里提取出来的参数，就是一个list多个
         origServiceRegistryURLs = url.getParameter(REGISTRY_FOR_SERVICE, new ArrayList<>());
         effectServiceRegistryURLs = this.filterServiceRegistry(origServiceRegistryURLs);
+
+        // 这里是有多个注册中心的url
         for (String tmpUrl : effectServiceRegistryURLs) {
             if (registryMap.get(tmpUrl) != null) {
                 serviceRegistries.put(tmpUrl, registryMap.get(tmpUrl));
                 continue;
             }
-            final URL registryUrl = URL.valueOf(tmpUrl).addParametersIfAbsent(url.getParameters()).addParameterIfAbsent(CHECK_KEY, url.getParameter(CHECK_KEY, "true"));
-            Registry registry = registryFactory.getRegistry(registryUrl);
+            // 比如说这里，通过RegistryFactory的SPI自适应代理，去根据url里具体的参数，去获取真正的注册中心
+            Registry registry = registryFactory.getRegistry(URL.valueOf(tmpUrl));
             registryMap.put(tmpUrl, registry);
             serviceRegistries.put(tmpUrl, registry);
         }
@@ -108,8 +110,7 @@ public class MultipleRegistry extends AbstractRegistry {
                 referenceRegistries.put(tmpUrl, registryMap.get(tmpUrl));
                 continue;
             }
-            final URL registryUrl = URL.valueOf(tmpUrl).addParameterIfAbsent(CHECK_KEY, url.getParameter(CHECK_KEY, "true"));
-            Registry registry = registryFactory.getRegistry(registryUrl);
+            Registry registry = registryFactory.getRegistry(URL.valueOf(tmpUrl));
             registryMap.put(tmpUrl, registry);
             referenceRegistries.put(tmpUrl, registry);
         }
@@ -157,6 +158,8 @@ public class MultipleRegistry extends AbstractRegistry {
     @Override
     public void register(URL url) {
         super.register(url);
+        // 当一个服务在进行注册的时候，此时会注册到多个注册中心去的
+        // zk和nacos两个注册中心，此时一个服务启动之后，会往两个注册中心都去进行注册
         for (Registry registry : serviceRegistries.values()) {
             registry.register(url);
         }
@@ -174,6 +177,7 @@ public class MultipleRegistry extends AbstractRegistry {
     public void subscribe(URL url, NotifyListener listener) {
         MultipleNotifyListenerWrapper multipleNotifyListenerWrapper = new MultipleNotifyListenerWrapper(listener);
         multipleNotifyListenerMap.put(listener, multipleNotifyListenerWrapper);
+        // 对每个注册中心，都会去执行订阅和发现，包括发现以及对那个注册中心订阅里面的你关注的目标服务
         for (Registry registry : referenceRegistries.values()) {
             SingleNotifyListener singleNotifyListener = new SingleNotifyListener(multipleNotifyListenerWrapper, registry);
             multipleNotifyListenerWrapper.putRegistryMap(registry.getUrl(), singleNotifyListener);

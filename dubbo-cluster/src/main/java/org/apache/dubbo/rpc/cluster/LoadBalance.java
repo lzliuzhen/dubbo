@@ -36,6 +36,11 @@ import java.util.List;
 @SPI(RandomLoadBalance.NAME)
 public interface LoadBalance {
 
+    // 针对负载均衡这个环节，也是一样的，他会去设计不同的负载均衡的策略，互相是可以替换的，同时提供了一个默认的实现
+    // 当你在运行的时候，你是可以配置不同的负载均衡的策略的
+    // 可以去使用不同的策略
+    // 经典的策略模式的实践和使用
+
     /**
      * select one invoker in list.
      *

@@ -40,7 +40,7 @@ import static org.apache.dubbo.rpc.Constants.SCOPE_REMOTE;
 /**
  * InjvmProtocol
  */
-public class InjvmProtocol extends AbstractProtocol {
+public class InjvmProtocol extends AbstractProtocol implements Protocol {
 
     public static final String NAME = LOCAL_PROTOCOL;
 
@@ -88,6 +88,7 @@ public class InjvmProtocol extends AbstractProtocol {
 
     @Override
     public <T> Invoker<T> protocolBindingRefer(Class<T> serviceType, URL url) throws RpcException {
+        // 直接就封装了一个所谓的injvm invoker，用于让你去进行本地的服务调用
         return new InjvmInvoker<T>(serviceType, url, url.getServiceKey(), exporterMap);
     }
 

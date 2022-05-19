@@ -27,7 +27,6 @@ import org.apache.dubbo.rpc.model.ModuleModel;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ModuleEnvironment extends Environment implements ModuleExt {
 
@@ -37,8 +36,6 @@ public class ModuleEnvironment extends Environment implements ModuleExt {
 
     public static final String NAME = "moduleEnvironment";
 
-    private AtomicBoolean initialized = new AtomicBoolean(false);
-
     private final ModuleModel moduleModel;
 
     private Environment applicationDelegate;
@@ -46,7 +43,7 @@ public class ModuleEnvironment extends Environment implements ModuleExt {
     private OrderedPropertiesConfiguration orderedPropertiesConfiguration;
 
     private CompositeConfiguration dynamicGlobalConfiguration;
-
+    // 支持外部的配置中心，支持从zk、nacos、apollo这种外部配置中心读写配置数据
     private DynamicConfiguration dynamicConfiguration;
 
     public ModuleEnvironment(ModuleModel moduleModel) {
@@ -57,9 +54,7 @@ public class ModuleEnvironment extends Environment implements ModuleExt {
 
     @Override
     public void initialize() throws IllegalStateException {
-        if (initialized.compareAndSet(false, true)) {
-            this.orderedPropertiesConfiguration = new OrderedPropertiesConfiguration(moduleModel);
-        }
+        this.orderedPropertiesConfiguration = new OrderedPropertiesConfiguration(moduleModel);
     }
 
     @Override

@@ -48,11 +48,26 @@ public class ActiveLimitFilter implements Filter, Filter.Listener {
 
     @Override
     public Result invoke(Invoker<?> invoker, Invocation invocation) throws RpcException {
+        // 他是放在cosumer端对并发进行控制的
+        // 就是针对filter给大家讲一下，在框架设计这个层面的介绍
+        // filter机制，在一个系统或者框架而言，都是必须要能够设计一个filter机制的
+        // 对你的一些核心的操作，做一些过滤和拦截，在这个过程中，可以做一些增强性的操作
+        // filter是很关键机制，会允许你自己去实现一些filter，通知配置项的配置，加入到他的filter链条里去
+        // 再往后讲，dubbo的rpc具体的一些细节，线程模型，线程池，网络协议，通信模型
+        // metadata，conficenter，metrics，monitor
+
         URL url = invoker.getUrl();
         String methodName = invocation.getMethodName();
         int max = invoker.getUrl().getMethodParameter(methodName, ACTIVES_KEY, 0);
+
+        // RpcStatus，顾名思义，就是针对我们的rpc调用的状态数据
+        // 这里可以进行统计和获取出来针对指定的接口的方法的调用当前的状态数据
         final RpcStatus rpcStatus = RpcStatus.getStatus(invoker.getUrl(), invocation.getMethodName());
-        if (!RpcStatus.beginCount(url, methodName, max)) {
+
+        // 如果说你确实设置了consumer端的active limit数值
+        // 发现此时针对某个接口的方法活跃调用次数，确实是超过了你设置的数值了，false
+        if (!RpcStatus.beginCount(url, methodName, max)) { // 正常来说，这里应该都是true
+            // 如果说你的活跃调用次数超过了设置的阈值，此时只能进行wait，等待，超时时间
             long timeout = invoker.getUrl().getMethodParameter(invocation.getMethodName(), TIMEOUT_KEY, 0);
             long start = System.currentTimeMillis();
             long remain = timeout;

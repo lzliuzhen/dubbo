@@ -20,17 +20,12 @@ import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.extension.Adaptive;
 import org.apache.dubbo.common.extension.SPI;
 
-import static org.apache.dubbo.common.constants.CommonConstants.PROTOCOL_KEY;
-import static org.apache.dubbo.metadata.report.MetadataReportFactory.DEFAULT;
-
 /**
  */
-@SPI(DEFAULT)
+@SPI("redis")
 public interface MetadataReportFactory {
 
-    String DEFAULT = "redis";
-
-    @Adaptive({PROTOCOL_KEY})
+    @Adaptive({"protocol"})
     MetadataReport getMetadataReport(URL url);
 
     default void destroy() {

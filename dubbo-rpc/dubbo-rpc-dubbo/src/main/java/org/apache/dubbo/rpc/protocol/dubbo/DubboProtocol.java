@@ -22,7 +22,6 @@ import org.apache.dubbo.common.config.ConfigurationUtils;
 import org.apache.dubbo.common.extension.ExtensionLoader;
 import org.apache.dubbo.common.serialize.support.SerializableClassRegistry;
 import org.apache.dubbo.common.serialize.support.SerializationOptimizer;
-import org.apache.dubbo.common.url.component.ServiceConfigURL;
 import org.apache.dubbo.common.utils.CollectionUtils;
 import org.apache.dubbo.common.utils.ConcurrentHashSet;
 import org.apache.dubbo.common.utils.NetUtils;
@@ -90,6 +89,11 @@ import static org.apache.dubbo.rpc.protocol.dubbo.Constants.SHARE_CONNECTIONS_KE
 
 /**
  * dubbo protocol support.
+ *
+ * 是负责把我们的服务对外进行网络发布的，transporter，exchanger，rpc，serialization，netty server
+ * 搞的比较简略了，就必须要把这块东西进行深入剖析，这块才是我们的核心和重点
+ * dubbo服务是如何对外进行网络发布的
+ *
  */
 public class DubboProtocol extends AbstractProtocol {
 
@@ -181,27 +185,10 @@ public class DubboProtocol extends AbstractProtocol {
             Invocation invocation = createInvocation(channel, channel.getUrl(), methodKey);
             if (invocation != null) {
                 try {
-                    if (Boolean.TRUE.toString().equals(invocation.getAttachment(STUB_EVENT_KEY))) {
-                        tryToGetStubService(channel, invocation);
-                    }
                     received(channel, invocation);
                 } catch (Throwable t) {
                     logger.warn("Failed to invoke event method " + invocation.getMethodName() + "(), cause: " + t.getMessage(), t);
                 }
-            }
-        }
-
-        private void tryToGetStubService(Channel channel, Invocation invocation) throws RemotingException {
-            try {
-                Invoker<?> invoker = getInvoker(channel, invocation);
-            } catch (RemotingException e) {
-                String serviceKey = serviceKey(
-                    0,
-                    (String) invocation.getObjectAttachments().get(PATH_KEY),
-                    (String) invocation.getObjectAttachments().get(VERSION_KEY),
-                    (String) invocation.getObjectAttachments().get(GROUP_KEY)
-                );
-                throw new RemotingException(channel, "The stub service[" + serviceKey + "] is not found, it may not be exported yet");
             }
         }
 
@@ -262,19 +249,18 @@ public class DubboProtocol extends AbstractProtocol {
     }
 
     Invoker<?> getInvoker(Channel channel, Invocation inv) throws RemotingException {
-        boolean isCallBackServiceInvoke;
-        boolean isStubServiceInvoke;
+        boolean isCallBackServiceInvoke = false;
+        boolean isStubServiceInvoke = false;
         int port = channel.getLocalAddress().getPort();
         String path = (String) inv.getObjectAttachments().get(PATH_KEY);
 
-        //if it's stub service on client side(after enable stubevent, usually is set up onconnect or ondisconnect method)
+        // if it's callback service on client side
         isStubServiceInvoke = Boolean.TRUE.toString().equals(inv.getObjectAttachments().get(STUB_EVENT_KEY));
         if (isStubServiceInvoke) {
-            //when a stub service export to local, it usually can't be exposed to port
-            port = 0;
+            port = channel.getRemoteAddress().getPort();
         }
 
-        // if it's callback service on client side
+        //callback
         isCallBackServiceInvoke = isClientSide(channel) && !isStubServiceInvoke;
         if (isCallBackServiceInvoke) {
             path += "." + inv.getObjectAttachments().get(CALLBACK_SERVICE_KEY);
@@ -287,6 +273,11 @@ public class DubboProtocol extends AbstractProtocol {
                 (String) inv.getObjectAttachments().get(VERSION_KEY),
                 (String) inv.getObjectAttachments().get(GROUP_KEY)
         );
+
+        // 根据你的服务
+        // 你的invocation肯定是要针对你的某个服务进行调用
+        // 必然要把你的服务之前发布出去的exporter可以拿出来，封装了你的proxy invoker
+        // 只要能够拿到proxy invoker，就可以在底层通过javassist技术或者是jdk反射技术，去调用目标实现类就可以了
         DubboExporter<?> exporter = (DubboExporter<?>) exporterMap.get(serviceKey);
 
         if (exporter == null) {
@@ -313,9 +304,11 @@ public class DubboProtocol extends AbstractProtocol {
 
         // export service.
         String key = serviceKey(url);
+
+        // exporter组件，就代表了你的invoker被发布出去了
         DubboExporter<T> exporter = new DubboExporter<T>(invoker, key, exporterMap);
 
-        //export a stub service for dispatching event
+        //export an stub service for dispatching event
         Boolean isStubSupportEvent = url.getParameter(STUB_EVENT_KEY, DEFAULT_STUB_EVENT);
         Boolean isCallbackservice = url.getParameter(IS_CALLBACK_SERVICE, false);
         if (isStubSupportEvent && !isCallbackservice) {
@@ -329,7 +322,9 @@ public class DubboProtocol extends AbstractProtocol {
             }
         }
 
+        // 这个就是打开对外的网络服务器，可以对外提供网络请求处理
         openServer(url);
+        // 对serialization，序列化和反序列化这一块做一个处理
         optimizeSerialization(url);
 
         return exporter;
@@ -339,7 +334,7 @@ public class DubboProtocol extends AbstractProtocol {
         checkDestroyed();
         // find server.
         String key = url.getAddress();
-        // client can export a service which only for server to invoke
+        //client can export a service which's only for server to invoke
         boolean isServer = url.getParameter(IS_SERVER_KEY, true);
         if (isServer) {
             ProtocolServer server = serverMap.get(key);
@@ -347,6 +342,7 @@ public class DubboProtocol extends AbstractProtocol {
                 synchronized (this) {
                     server = serverMap.get(key);
                     if (server == null) {
+                        // 在这里会进行网络服务器的构建
                         serverMap.put(key, createServer(url));
                     }else {
                         server.reset(url);
@@ -361,7 +357,7 @@ public class DubboProtocol extends AbstractProtocol {
 
     private void checkDestroyed() {
         if (destroyed.get()) {
-            throw new IllegalStateException(getClass().getSimpleName() + " is destroyed");
+            throw new IllegalStateException( getClass().getSimpleName() + " is destroyed");
         }
     }
 
@@ -375,9 +371,13 @@ public class DubboProtocol extends AbstractProtocol {
                 .build();
         String str = url.getParameter(SERVER_KEY, DEFAULT_REMOTING_SERVER);
 
-        if (StringUtils.isNotEmpty(str) && !url.getOrDefaultFrameworkModel().getExtensionLoader(Transporter.class).hasExtension(str)) {
+        if (str != null && str.length() > 0 && !url.getOrDefaultFrameworkModel().getExtensionLoader(Transporter.class).hasExtension(str)) {
             throw new RpcException("Unsupported server type: " + str + ", url: " + url);
         }
+
+
+        // 为什么dubbo中要设计出来exchange这一层
+        // 设计思想，官方，exchange这一层负责同步转异步，request/response网络请求响应模型的封装
 
         ExchangeServer server;
         try {
@@ -387,7 +387,7 @@ public class DubboProtocol extends AbstractProtocol {
         }
 
         str = url.getParameter(CLIENT_KEY);
-        if (StringUtils.isNotEmpty(str)) {
+        if (str != null && str.length() > 0) {
             Set<String> supportedTypes = url.getOrDefaultFrameworkModel().getExtensionLoader(Transporter.class).getSupportedExtensions();
             if (!supportedTypes.contains(str)) {
                 throw new RpcException("Unsupported client type: " + str);
@@ -446,6 +446,8 @@ public class DubboProtocol extends AbstractProtocol {
         optimizeSerialization(url);
 
         // create rpc invoker.
+        // 针对你的目标服务实例的机器的url，构建一个dubbo invoker
+        // 针对这个url，会有get client这个过程，get client这个过程就是针对目标服务实例进行网络连接
         DubboInvoker<T> invoker = new DubboInvoker<T>(serviceType, url, getClients(url), invokers);
         invokers.add(invoker);
 
@@ -626,7 +628,7 @@ public class DubboProtocol extends AbstractProtocol {
      */
     private ReferenceCountExchangeClient buildReferenceCountExchangeClient(URL url) {
         ExchangeClient exchangeClient = initClient(url);
-        ReferenceCountExchangeClient client = new ReferenceCountExchangeClient(exchangeClient, DubboCodec.NAME);
+        ReferenceCountExchangeClient client = new ReferenceCountExchangeClient(exchangeClient);
         // read configs
         int shutdownTimeout = ConfigurationUtils.getServerShutdownTimeout(url.getScopeModel());
         client.setShutdownWaitTime(shutdownTimeout);
@@ -645,24 +647,22 @@ public class DubboProtocol extends AbstractProtocol {
          * which means params are shared among different services. Since client is shared among services this is currently not a problem.
          */
         String str = url.getParameter(CLIENT_KEY, url.getParameter(SERVER_KEY, DEFAULT_REMOTING_CLIENT));
+        url = url.addParameter(CODEC_KEY, DubboCodec.NAME);
+        // enable heartbeat by default
+        url = url.addParameterIfAbsent(HEARTBEAT_KEY, String.valueOf(DEFAULT_HEARTBEAT));
 
         // BIO is not allowed since it has severe performance issue.
-        if (StringUtils.isNotEmpty(str) && !url.getOrDefaultFrameworkModel().getExtensionLoader(Transporter.class).hasExtension(str)) {
+        if (str != null && str.length() > 0 && !url.getOrDefaultFrameworkModel().getExtensionLoader(Transporter.class).hasExtension(str)) {
             throw new RpcException("Unsupported client type: " + str + "," +
                     " supported client type is " + StringUtils.join(url.getOrDefaultFrameworkModel().getExtensionLoader(Transporter.class).getSupportedExtensions(), " "));
         }
 
         ExchangeClient client;
         try {
-            // Replace InstanceAddressURL with ServiceConfigURL.
-            url = new ServiceConfigURL(DubboCodec.NAME, url.getUsername(), url.getPassword(), url.getHost(), url.getPort(), url.getPath(),  url.getAllParameters());
-            url = url.addParameter(CODEC_KEY, DubboCodec.NAME);
-            // enable heartbeat by default
-            url = url.addParameterIfAbsent(HEARTBEAT_KEY, String.valueOf(DEFAULT_HEARTBEAT));
-
             // connection should be lazy
             if (url.getParameter(LAZY_CONNECT_KEY, false)) {
                 client = new LazyConnectExchangeClient(url, requestHandler);
+
             } else {
                 client = Exchangers.connect(url, requestHandler);
             }

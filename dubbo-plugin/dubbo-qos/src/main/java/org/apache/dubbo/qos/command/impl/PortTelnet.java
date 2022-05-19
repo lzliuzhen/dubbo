@@ -48,14 +48,14 @@ public class PortTelnet implements BaseCommand {
                 if ("-l".equals(part)) {
                     detail = true;
                 } else {
-                    if (!StringUtils.isNumber(part)) {
+                    if (!StringUtils.isInteger(part)) {
                         return "Illegal port " + part + ", must be integer.";
                     }
                     port = part;
                 }
             }
         }
-        if (StringUtils.isEmpty(port)) {
+        if (port == null || port.length() == 0) {
             for (ProtocolServer server : dubboProtocol.getServers()) {
                 if (buf.length() > 0) {
                     buf.append("\r\n");

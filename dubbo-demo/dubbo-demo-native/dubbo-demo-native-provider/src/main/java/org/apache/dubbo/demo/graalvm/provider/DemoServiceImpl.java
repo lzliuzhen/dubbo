@@ -16,9 +16,8 @@
  */
 package org.apache.dubbo.demo.graalvm.provider;
 
-import org.apache.dubbo.rpc.RpcContext;
-
 import org.apace.dubbo.graalvm.demo.DemoService;
+import org.apache.dubbo.rpc.RpcContext;
 
 
 public class DemoServiceImpl implements DemoService {

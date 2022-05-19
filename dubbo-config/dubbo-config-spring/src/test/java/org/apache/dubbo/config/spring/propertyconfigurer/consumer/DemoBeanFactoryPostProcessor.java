@@ -17,7 +17,6 @@
 package org.apache.dubbo.config.spring.propertyconfigurer.consumer;
 
 import org.apache.dubbo.config.spring.api.HelloService;
-
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;

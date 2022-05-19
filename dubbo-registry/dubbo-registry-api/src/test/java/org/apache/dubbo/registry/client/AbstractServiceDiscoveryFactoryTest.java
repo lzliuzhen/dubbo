@@ -17,9 +17,6 @@
 package org.apache.dubbo.registry.client;
 
 import org.apache.dubbo.common.URL;
-import org.apache.dubbo.config.ApplicationConfig;
-import org.apache.dubbo.rpc.model.ApplicationModel;
-
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -32,7 +29,6 @@ public class AbstractServiceDiscoveryFactoryTest {
 
     @Test
     public void testGetServiceDiscoveryWithCache() {
-        ApplicationModel.defaultModel().getApplicationConfigManager().setApplication(new ApplicationConfig("AbstractServiceDiscoveryFactoryTest"));
         URL url = URL.valueOf("mock://127.0.0.1:8888");
         ServiceDiscoveryFactory factory = ServiceDiscoveryFactory.getExtension(url);
         ServiceDiscovery serviceDiscovery1 = factory.getServiceDiscovery(url);

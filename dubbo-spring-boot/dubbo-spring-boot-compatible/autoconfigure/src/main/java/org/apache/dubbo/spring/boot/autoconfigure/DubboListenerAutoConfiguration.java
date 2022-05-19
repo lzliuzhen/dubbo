@@ -18,6 +18,7 @@ package org.apache.dubbo.spring.boot.autoconfigure;
 
 import org.apache.dubbo.spring.boot.context.event.AwaitingNonWebApplicationListener;
 import org.apache.dubbo.spring.boot.context.event.DubboConfigBeanDefinitionConflictApplicationListener;
+import org.apache.dubbo.spring.boot.context.event.WelcomeLogoApplicationListener;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -39,6 +40,12 @@ public class DubboListenerAutoConfiguration {
     @Bean
     public DubboConfigBeanDefinitionConflictApplicationListener dubboConfigBeanDefinitionConflictApplicationListener() {
         return new DubboConfigBeanDefinitionConflictApplicationListener();
+    }
+
+    @ConditionalOnMissingBean
+    @Bean
+    public WelcomeLogoApplicationListener welcomeLogoApplicationListener() {
+        return new WelcomeLogoApplicationListener();
     }
 
     @ConditionalOnMissingBean

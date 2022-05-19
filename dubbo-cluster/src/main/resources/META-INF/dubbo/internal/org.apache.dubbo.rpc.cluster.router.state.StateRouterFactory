@@ -1,6 +1,2 @@
-tag=org.apache.dubbo.rpc.cluster.router.tag.TagStateRouterFactory
-condition=org.apache.dubbo.rpc.cluster.router.condition.ConditionStateRouterFactory
-service=org.apache.dubbo.rpc.cluster.router.condition.config.ServiceStateRouterFactory
-app=org.apache.dubbo.rpc.cluster.router.condition.config.AppStateRouterFactory
-mock=org.apache.dubbo.rpc.cluster.router.mock.MockStateRouterFactory
-standard-mesh-rule=org.apache.dubbo.rpc.cluster.router.mesh.route.StandardMeshRuleRouterFactory
+tag-dynamic=org.apache.dubbo.rpc.cluster.router.tag.TagDynamicStateRouterFactory
+tag-static=org.apache.dubbo.rpc.cluster.router.tag.TagStaticStateRouterFactory

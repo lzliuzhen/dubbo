@@ -19,7 +19,6 @@ package org.apache.dubbo.rpc.filter;
 import org.apache.dubbo.common.extension.Activate;
 import org.apache.dubbo.common.logger.Logger;
 import org.apache.dubbo.common.logger.LoggerFactory;
-import org.apache.dubbo.common.threadpool.manager.FrameworkExecutorRepository;
 import org.apache.dubbo.common.utils.ConcurrentHashSet;
 import org.apache.dubbo.common.utils.ConfigUtils;
 import org.apache.dubbo.rpc.Filter;
@@ -96,9 +95,10 @@ public class AccessLogFilter implements Filter {
      */
     @Override
     public Result invoke(Invoker<?> invoker, Invocation inv) throws RpcException {
+        // filter都是支持invoke接口的，下一个invoker，rpc调用
+
         if (scheduled.compareAndSet(false, true)) {
-            inv.getModuleModel().getApplicationModel().getFrameworkModel().getBeanFactory()
-                .getBean(FrameworkExecutorRepository.class).getSharedScheduledExecutor()
+            inv.getModuleModel().getApplicationModel().getApplicationExecutorRepository().getSharedScheduledExecutor()
                 .scheduleWithFixedDelay(this::writeLogToFile, LOG_OUTPUT_INTERVAL, LOG_OUTPUT_INTERVAL, TimeUnit.MILLISECONDS);
         }
         try {
@@ -111,6 +111,10 @@ public class AccessLogFilter implements Filter {
         } catch (Throwable t) {
             logger.warn("Exception in AccessLogFilter of service(" + invoker + " -> " + inv + ")", t);
         }
+
+        // filter chain，写完了日志之后，就会调用下一个invoker
+        // 责任链设计模式，构建了一条责任链，链条
+
         return invoker.invoke(inv);
     }
 
@@ -147,6 +151,8 @@ public class AccessLogFilter implements Filter {
     }
 
     private void writeLogToFile() {
+        // 核心人物，就是把日志写到磁盘文件里去
+        // logEntries就是你存储的日志条目
         if (!logEntries.isEmpty()) {
             for (Map.Entry<String, Set<AccessLogData>> entry : logEntries.entrySet()) {
                 String accessLog = entry.getKey();

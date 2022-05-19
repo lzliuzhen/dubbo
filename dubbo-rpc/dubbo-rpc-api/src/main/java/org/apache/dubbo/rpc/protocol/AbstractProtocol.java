@@ -54,6 +54,7 @@ public abstract class AbstractProtocol implements Protocol, ScopeModelAware {
     /**
      * <host:port, ProtocolServer>
      */
+    // 这个是属于网络服务器的缓存，key就是host:port，value就是ProtocolServer
     protected final Map<String, ProtocolServer> serverMap = new ConcurrentHashMap<>();
 
     // TODO SoftReference

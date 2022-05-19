@@ -34,6 +34,7 @@ public enum CuratorFrameworkParams {
 
     /**
      * The root path of Dubbo Service
+     * 如果是基于service discovery机制去实现，根路径就是/services，不是/dubbo
      */
     ROOT_PATH("rootPath", "/services", value -> value),
 

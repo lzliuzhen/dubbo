@@ -23,15 +23,14 @@ import com.alibaba.fastjson.JSON;
 
 import java.beans.Transient;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.SortedMap;
 import java.util.TreeMap;
 
+import static org.apache.dubbo.common.constants.CommonConstants.SCOPE_MODEL;
 import static org.apache.dubbo.registry.client.metadata.ServiceInstanceMetadataUtils.ENDPOINTS;
 import static org.apache.dubbo.registry.client.metadata.ServiceInstanceMetadataUtils.EXPORTED_SERVICES_REVISION_PROPERTY_NAME;
 
@@ -56,6 +55,8 @@ public class DefaultServiceInstance implements ServiceInstance {
 
     private boolean healthy = true;
 
+    // 每个服务实例都可以带一个metadata，元数据
+    // 元数据，就是大量的key-value对，一个一个的key-value
     private Map<String, String> metadata = new HashMap<>();
 
     private transient String address;
@@ -71,8 +72,7 @@ public class DefaultServiceInstance implements ServiceInstance {
      */
     private transient Map<String, String> extendParams;
     private transient List<Endpoint> endpoints;
-    private transient ApplicationModel applicationModel;
-    private transient InstanceAddressURL instanceAddressURL = null;
+    private transient Map<String, Object> attributes = new HashMap<>();
 
     public DefaultServiceInstance() {
     }
@@ -87,7 +87,7 @@ public class DefaultServiceInstance implements ServiceInstance {
         this.registryCluster = other.registryCluster;
         this.address = null;
         this.metadata = new HashMap<>(other.metadata);
-        this.applicationModel = other.applicationModel;
+        this.attributes = new HashMap<>(other.attributes);
         this.extendParams = other.extendParams != null ? new HashMap<>(other.extendParams) : other.extendParams;
         this.endpoints = other.endpoints != null ? new ArrayList<>(other.endpoints) : other.endpoints;
     }
@@ -192,52 +192,16 @@ public class DefaultServiceInstance implements ServiceInstance {
     @Override
     public Map<String, String> getExtendParams() {
         if (extendParams == null) {
-            return Collections.emptyMap();
+            extendParams = new HashMap<>();
         }
         return extendParams;
     }
 
-    @Override
-    public String getExtendParam(String key) {
-        if (extendParams == null) {
-            return null;
-        }
-        return extendParams.get(key);
-    }
-
-    @Override
-    public String putExtendParam(String key, String value) {
-        if (extendParams == null) {
-            extendParams = new HashMap<>();
-        }
-        return extendParams.put(key, value);
-    }
-
-    @Override
-    public String putExtendParamIfAbsent(String key, String value) {
-        if (extendParams == null) {
-            extendParams = new HashMap<>();
-        }
-        return extendParams.putIfAbsent(key, value);
-    }
-
-    @Override
-    public String removeExtendParam(String key) {
-        if (extendParams == null) {
-            return null;
-        }
-        return extendParams.remove(key);
-    }
-
-    public void setEndpoints(List<Endpoint> endpoints) {
-        this.endpoints = endpoints;
-    }
-
     public List<Endpoint> getEndpoints() {
-        if (endpoints == null) {
-            endpoints = new LinkedList<>(JSON.parseArray(metadata.get(ENDPOINTS), Endpoint.class));
+        if (endpoints != null) {
+            return endpoints;
         }
-        return endpoints;
+        return JSON.parseArray(metadata.get(ENDPOINTS), Endpoint.class);
     }
 
     public DefaultServiceInstance copyFrom(Endpoint endpoint) {
@@ -259,14 +223,20 @@ public class DefaultServiceInstance implements ServiceInstance {
     }
 
     @Override
+    @Transient
+    public Map<String, Object> getAttributes() {
+        return attributes;
+    }
+
+    @Override
     public void setApplicationModel(ApplicationModel applicationModel) {
-        this.applicationModel = applicationModel;
+        this.attributes.put(SCOPE_MODEL, applicationModel);
     }
 
     @Override
     @Transient
     public ApplicationModel getApplicationModel() {
-        return applicationModel;
+        return (ApplicationModel) this.attributes.get(SCOPE_MODEL);
     }
 
     public void setMetadata(Map<String, String> metadata) {
@@ -279,15 +249,11 @@ public class DefaultServiceInstance implements ServiceInstance {
 
     public void setServiceMetadata(MetadataInfo serviceMetadata) {
         this.serviceMetadata = serviceMetadata;
-        this.instanceAddressURL = null;
     }
 
     @Override
-    public InstanceAddressURL toURL(String protocol) {
-        if (instanceAddressURL == null) {
-            instanceAddressURL = new InstanceAddressURL(this, serviceMetadata, protocol);
-        }
-        return instanceAddressURL;
+    public InstanceAddressURL toURL() {
+        return new InstanceAddressURL(this, serviceMetadata);
     }
 
     @Override
@@ -306,11 +272,7 @@ public class DefaultServiceInstance implements ServiceInstance {
             if (entry.getKey().equals(EXPORTED_SERVICES_REVISION_PROPERTY_NAME)) {
                 continue;
             }
-            if (entry.getValue() == null) {
-                equals = equals && (entry.getValue() == that.getMetadata().get(entry.getKey()));
-            } else {
-                equals = equals && entry.getValue().equals(that.getMetadata().get(entry.getKey()));
-            }
+            equals = equals && entry.getValue().equals(that.getMetadata().get(entry.getKey()));
         }
 
         return equals;
@@ -335,7 +297,7 @@ public class DefaultServiceInstance implements ServiceInstance {
 
     public String toFullString() {
         return "DefaultServiceInstance{" +
-                "serviceName='" + serviceName + '\'' +
+                ", serviceName='" + serviceName + '\'' +
                 ", host='" + host + '\'' +
                 ", port=" + port +
                 ", enabled=" + enabled +
@@ -345,22 +307,22 @@ public class DefaultServiceInstance implements ServiceInstance {
     }
 
     public static class Endpoint {
-        int port;
+        Integer port;
         String protocol;
 
         public Endpoint() {
         }
 
-        public Endpoint(int port, String protocol) {
+        public Endpoint(Integer port, String protocol) {
             this.port = port;
             this.protocol = protocol;
         }
 
-        public int getPort() {
+        public Integer getPort() {
             return port;
         }
 
-        public void setPort(int port) {
+        public void setPort(Integer port) {
             this.port = port;
         }
 

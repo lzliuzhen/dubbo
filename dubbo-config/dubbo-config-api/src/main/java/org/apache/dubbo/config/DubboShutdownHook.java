@@ -16,8 +16,6 @@
  */
 package org.apache.dubbo.config;
 
-import org.apache.dubbo.common.config.ConfigurationUtils;
-import org.apache.dubbo.common.constants.CommonConstants;
 import org.apache.dubbo.common.logger.Logger;
 import org.apache.dubbo.common.logger.LoggerFactory;
 import org.apache.dubbo.common.utils.Assert;
@@ -47,25 +45,16 @@ public class DubboShutdownHook extends Thread {
      */
     private final AtomicBoolean destroyed = new AtomicBoolean(false);
 
-    /**
-     * Whether ignore listen on shutdown hook?
-     */
-    private final boolean ignoreListenShutdownHook;
-
     public DubboShutdownHook(ApplicationModel applicationModel) {
         super("DubboShutdownHook");
         this.applicationModel = applicationModel;
         Assert.notNull(this.applicationModel, "ApplicationModel is null");
-        ignoreListenShutdownHook = Boolean.parseBoolean(ConfigurationUtils.getProperty(applicationModel, CommonConstants.IGNORE_LISTEN_SHUTDOWN_HOOK));
-        if (ignoreListenShutdownHook) {
-            logger.info("dubbo.shutdownHook.listenIgnore configured, will ignore add shutdown hook to jvm.");
-        }
     }
 
     @Override
     public void run() {
 
-        if (destroyed.compareAndSet(false, true) && !ignoreListenShutdownHook) {
+        if (destroyed.compareAndSet(false, true)) {
             if (logger.isInfoEnabled()) {
                 logger.info("Run shutdown hook now.");
             }
@@ -82,7 +71,7 @@ public class DubboShutdownHook extends Thread {
      * Register the ShutdownHook
      */
     public void register() {
-        if (registered.compareAndSet(false, true) && !ignoreListenShutdownHook) {
+        if (registered.compareAndSet(false, true)) {
             try {
                 Runtime.getRuntime().addShutdownHook(this);
             } catch (IllegalStateException e) {
@@ -97,7 +86,7 @@ public class DubboShutdownHook extends Thread {
      * Unregister the ShutdownHook
      */
     public void unregister() {
-        if (registered.compareAndSet(true, false) && !ignoreListenShutdownHook) {
+        if (registered.compareAndSet(true, false)) {
             if (this.isAlive()) {
                 // DubboShutdownHook thread is running
                 return;

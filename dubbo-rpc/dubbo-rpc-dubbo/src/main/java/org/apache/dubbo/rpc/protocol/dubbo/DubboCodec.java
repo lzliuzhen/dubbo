@@ -73,9 +73,13 @@ public class DubboCodec extends ExchangeCodec {
 
     @Override
     protected Object decodeBody(Channel channel, InputStream is, byte[] header) throws IOException {
+        // 对于header[2]就是一个flag，request还是什么
         byte flag = header[2], proto = (byte) (flag & SERIALIZATION_MASK);
         // get request id.
+        // 从header里提取出来对应的request id
         long id = Bytes.bytes2long(header, 4);
+
+        // 如果说flag和FLAG_REQUEST进行位运算，0，说明他不是request，是response
         if ((flag & FLAG_REQUEST) == 0) {
             // decode response.
             Response res = new Response(id);
@@ -125,10 +129,11 @@ public class DubboCodec extends ExchangeCodec {
             return res;
         } else {
             // decode request.
+            // 如果说flag和FLAG_REQUEST进行与运算，不为0，request
             Request req = new Request(id);
-            req.setVersion(Version.getProtocolVersion());
-            req.setTwoWay((flag & FLAG_TWOWAY) != 0);
-            if ((flag & FLAG_EVENT) != 0) {
+            req.setVersion(Version.getProtocolVersion()); // version这个东西是代码里面写死的，通用的
+            req.setTwoWay((flag & FLAG_TWOWAY) != 0); // 把你的flag和FLAG_TWOWAY进行与运算，如果不为0，就说明是two way
+            if ((flag & FLAG_EVENT) != 0) { // 一个字节，用一个字节的二进制的数据，通过各种位运算，就可以让一个字节表达出来各种各样的含义
                 req.setEvent(true);
             }
             try {
@@ -146,7 +151,7 @@ public class DubboCodec extends ExchangeCodec {
                     DecodeableRpcInvocation inv;
                     if (channel.getUrl().getParameter(DECODE_IN_IO_THREAD_KEY, DEFAULT_DECODE_IN_IO_THREAD)) {
                         inv = new DecodeableRpcInvocation(frameworkModel, channel, req, is, proto);
-                        inv.decode();
+                        inv.decode(); // 现在在执行这些逻辑的，是我们的netty的Io线程，是否再io线程里直接进行decode
                     } else {
                         inv = new DecodeableRpcInvocation(frameworkModel, channel, req,
                                 new UnsafeByteArrayInputStream(readMessageData(is)), proto);
@@ -163,6 +168,7 @@ public class DubboCodec extends ExchangeCodec {
                 req.setData(t);
             }
 
+            // 我们可以看到，编码和序列化的时候，这个过程跟我们解码和反序列化是完全对上的
             return req;
         }
     }
@@ -190,18 +196,18 @@ public class DubboCodec extends ExchangeCodec {
     protected void encodeRequestData(Channel channel, ObjectOutput out, Object data, String version) throws IOException {
         RpcInvocation inv = (RpcInvocation) data;
 
-        out.writeUTF(version);
+        out.writeUTF(version); // 先写version
         // https://github.com/apache/dubbo/issues/6138
         String serviceName = inv.getAttachment(INTERFACE_KEY);
         if (serviceName == null) {
             serviceName = inv.getAttachment(PATH_KEY);
         }
-        out.writeUTF(serviceName);
-        out.writeUTF(inv.getAttachment(VERSION_KEY));
+        out.writeUTF(serviceName); // 再写服务名称
+        out.writeUTF(inv.getAttachment(VERSION_KEY)); // 再version key拿出来的东西
 
-        out.writeUTF(inv.getMethodName());
-        out.writeUTF(inv.getParameterTypesDesc());
-        Object[] args = inv.getArguments();
+        out.writeUTF(inv.getMethodName()); // 再去写方法名称
+        out.writeUTF(inv.getParameterTypesDesc());// 再去写方法参数类型的描述
+        Object[] args = inv.getArguments(); // 再去写一些具体的参数值
         if (args != null) {
             for (int i = 0; i < args.length; i++) {
                 out.writeObject(callbackServiceCodec.encodeInvocationArgument(channel, inv, i));

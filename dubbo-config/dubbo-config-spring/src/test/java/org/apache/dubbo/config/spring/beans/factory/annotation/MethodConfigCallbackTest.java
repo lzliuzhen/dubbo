@@ -23,7 +23,8 @@ import org.apache.dubbo.config.spring.api.HelloService;
 import org.apache.dubbo.config.spring.api.MethodCallback;
 import org.apache.dubbo.config.spring.context.annotation.provider.ProviderConfiguration;
 import org.apache.dubbo.config.spring.impl.MethodCallbackImpl;
-
+import org.apache.dubbo.config.spring.registrycenter.RegistryCenter;
+import org.apache.dubbo.config.spring.registrycenter.ZookeeperSingleRegistryCenter;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
@@ -48,27 +49,32 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
         })
 @TestPropertySource(properties = {
     "dubbo.protocol.port=-1",
-    "dubbo.registry.address=${zookeeper.connection.address}"
+    "dubbo.registry.address=zookeeper://127.0.0.1:2181"
 })
 @EnableAspectJAutoProxy(proxyTargetClass = true, exposeProxy = true)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 public class MethodConfigCallbackTest {
 
+    private static RegistryCenter singleRegistryCenter;
+
     @BeforeAll
     public static void beforeAll() {
+        singleRegistryCenter = new ZookeeperSingleRegistryCenter();
+        singleRegistryCenter.startup();
         DubboBootstrap.reset();
     }
 
     @AfterAll
     public static void afterAll() {
         DubboBootstrap.reset();
+        singleRegistryCenter.shutdown();
     }
 
     @Autowired
     private ConfigurableApplicationContext context;
 
     @DubboReference(check = false, async = true,
-        injvm = false, // Currently, local call is not supported method callback cause by Injvm protocol is not supported ClusterFilter
+        injvm = false, // Currently local call is not supported method callback cause by Injvm protocol is not supported ClusterFilter
         methods = {@Method(name = "sayHello",
         oninvoke = "methodCallback.oninvoke1",
         onreturn = "methodCallback.onreturn1",
@@ -76,7 +82,7 @@ public class MethodConfigCallbackTest {
     private HelloService helloServiceMethodCallBack;
 
     @DubboReference(check = false, async = true,
-            injvm = false, // Currently, local call is not supported method callback cause by Injvm protocol is not supported ClusterFilter
+            injvm = false, // Currently local call is not supported method callback cause by Injvm protocol is not supported ClusterFilter
             methods = {@Method(name = "sayHello",
             oninvoke = "methodCallback.oninvoke2",
             onreturn = "methodCallback.onreturn2",

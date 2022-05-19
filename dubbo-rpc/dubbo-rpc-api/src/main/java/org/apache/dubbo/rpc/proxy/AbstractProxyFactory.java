@@ -16,8 +16,6 @@
  */
 package org.apache.dubbo.rpc.proxy;
 
-import org.apache.dubbo.common.logger.Logger;
-import org.apache.dubbo.common.logger.LoggerFactory;
 import org.apache.dubbo.common.utils.ClassUtils;
 import org.apache.dubbo.common.utils.ReflectUtils;
 import org.apache.dubbo.common.utils.StringUtils;
@@ -44,8 +42,6 @@ public abstract class AbstractProxyFactory implements ProxyFactory {
         EchoService.class, Destroyable.class
     };
 
-    private static final Logger logger = LoggerFactory.getLogger(AbstractProxyFactory.class);
-
     @Override
     public <T> T getProxy(Invoker<T> invoker) throws RpcException {
         return getProxy(invoker, false);
@@ -54,14 +50,17 @@ public abstract class AbstractProxyFactory implements ProxyFactory {
     @Override
     public <T> T getProxy(Invoker<T> invoker, boolean generic) throws RpcException {
         // when compiling with native image, ensure that the order of the interfaces remains unchanged
+        // 一看是放什么，你的动态动态实现类，实现哪些接口
         LinkedHashSet<Class<?>> interfaces = new LinkedHashSet<>();
-        ClassLoader classLoader = getClassLoader(invoker);
 
         String config = invoker.getUrl().getParameter(INTERFACES);
         if (StringUtils.isNotEmpty(config)) {
             String[] types = COMMA_SPLIT_PATTERN.split(config);
+            // 在这里就可以读取出来，你要访问的接口有哪些，可能是有多个，在这里就会对多个接口做一个遍历
             for (String type : types) {
                 try {
+                    ClassLoader classLoader = getClassLoader(invoker);
+                    // 对每个接口都拿出来对应的class对象，放到interfaces集合里去
                     interfaces.add(ReflectUtils.forName(classLoader, type));
                 } catch (Throwable e) {
                     // ignore
@@ -70,13 +69,12 @@ public abstract class AbstractProxyFactory implements ProxyFactory {
             }
         }
 
-        Class<?> realInterfaceClass = null;
         if (generic) {
             try {
                 // find the real interface from url
                 String realInterface = invoker.getUrl().getParameter(Constants.INTERFACE);
-                realInterfaceClass = ReflectUtils.forName(classLoader, realInterface);
-                interfaces.add(realInterfaceClass);
+                ClassLoader classLoader = getClassLoader(invoker);
+                interfaces.add(ReflectUtils.forName(classLoader, realInterface));
             } catch (Throwable e) {
                 // ignore
             }
@@ -89,27 +87,15 @@ public abstract class AbstractProxyFactory implements ProxyFactory {
         interfaces.add(invoker.getInterface());
         interfaces.addAll(Arrays.asList(INTERNAL_INTERFACES));
 
-        try {
-            return getProxy(invoker, interfaces.toArray(new Class<?>[0]));
-        } catch (Throwable t) {
-            if (generic) {
-                if (realInterfaceClass != null) {
-                    interfaces.remove(realInterfaceClass);
-                }
-                interfaces.remove(invoker.getInterface());
-
-                logger.error("Error occur when creating proxy. Invoker is in generic mode. Trying to create proxy without real interface class.", t);
-                return getProxy(invoker, interfaces.toArray(new Class<?>[0]));
-            } else {
-                throw t;
-            }
-        }
+        // dubbo一般来说生成动态代理，就是两种技术机制，javassist（动态拼接类代码字符串，动态编译，动态生成一个类）
+        // jdk就是通过jdk提供的API，去进行反射，生成动态代理
+        return getProxy(invoker, interfaces.toArray(new Class<?>[0]));
     }
 
     private <T> ClassLoader getClassLoader(Invoker<T> invoker) {
         ServiceModel serviceModel = invoker.getUrl().getServiceModel();
         ClassLoader classLoader = null;
-        if (serviceModel != null && serviceModel.getConfig() != null) {
+        if (serviceModel != null) {
             classLoader = serviceModel.getConfig().getInterfaceClassLoader();
         }
         if (classLoader == null) {

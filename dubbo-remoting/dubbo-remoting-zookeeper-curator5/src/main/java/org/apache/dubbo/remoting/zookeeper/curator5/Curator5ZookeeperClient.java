@@ -16,16 +16,6 @@
  */
 package org.apache.dubbo.remoting.zookeeper.curator5;
 
-import org.apache.dubbo.common.URL;
-import org.apache.dubbo.common.config.configcenter.ConfigItem;
-import org.apache.dubbo.common.logger.Logger;
-import org.apache.dubbo.common.logger.LoggerFactory;
-import org.apache.dubbo.remoting.zookeeper.AbstractZookeeperClient;
-import org.apache.dubbo.remoting.zookeeper.ChildListener;
-import org.apache.dubbo.remoting.zookeeper.DataListener;
-import org.apache.dubbo.remoting.zookeeper.EventType;
-import org.apache.dubbo.remoting.zookeeper.StateListener;
-
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.framework.api.CuratorWatcher;
@@ -35,6 +25,15 @@ import org.apache.curator.framework.recipes.cache.NodeCacheListener;
 import org.apache.curator.framework.state.ConnectionState;
 import org.apache.curator.framework.state.ConnectionStateListener;
 import org.apache.curator.retry.RetryNTimes;
+import org.apache.dubbo.common.URL;
+import org.apache.dubbo.common.config.configcenter.ConfigItem;
+import org.apache.dubbo.common.logger.Logger;
+import org.apache.dubbo.common.logger.LoggerFactory;
+import org.apache.dubbo.remoting.zookeeper.AbstractZookeeperClient;
+import org.apache.dubbo.remoting.zookeeper.ChildListener;
+import org.apache.dubbo.remoting.zookeeper.DataListener;
+import org.apache.dubbo.remoting.zookeeper.EventType;
+import org.apache.dubbo.remoting.zookeeper.StateListener;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException.NoNodeException;
 import org.apache.zookeeper.KeeperException.NodeExistsException;
@@ -50,13 +49,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
-import static org.apache.dubbo.common.constants.CommonConstants.SESSION_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.TIMEOUT_KEY;
 
 
 public class Curator5ZookeeperClient extends AbstractZookeeperClient<Curator5ZookeeperClient.NodeCacheListenerImpl, Curator5ZookeeperClient.CuratorWatcherImpl> {
 
     protected static final Logger logger = LoggerFactory.getLogger(Curator5ZookeeperClient.class);
+    private static final String ZK_SESSION_EXPIRE_KEY = "zk.session.expire";
 
     private static final Charset CHARSET = StandardCharsets.UTF_8;
     private final CuratorFramework client;
@@ -65,20 +64,26 @@ public class Curator5ZookeeperClient extends AbstractZookeeperClient<Curator5Zoo
     public Curator5ZookeeperClient(URL url) {
         super(url);
         try {
+            // 对zk发起连接超时的时间默认是5s，尝试向zk发起连接，如果超过5s没连接上去，此时就超时了
             int timeout = url.getParameter(TIMEOUT_KEY, DEFAULT_CONNECTION_TIMEOUT_MS);
-            int sessionExpireMs = url.getParameter(SESSION_KEY, DEFAULT_SESSION_TIMEOUT_MS);
+            // session会话过期的时间，默认是1分钟，如果zk客户端和zk服务端连接断开了超过1分钟，此时会话过期
+            int sessionExpireMs = url.getParameter(ZK_SESSION_EXPIRE_KEY, DEFAULT_SESSION_TIMEOUT_MS);
+            // 基于curator框架去构建zk client，curator是zk在使用的时候，最常用的一个框架
+            // curator框架是对zk原生client做了一层包装
+            // 访问redis，redisson框架，封装了redis原生Jedis API，提供了大量高阶的功能
             CuratorFrameworkFactory.Builder builder = CuratorFrameworkFactory.builder()
                     .connectString(url.getBackupAddress())
-                    .retryPolicy(new RetryNTimes(1, 1000))
-                    .connectionTimeoutMs(timeout)
-                    .sessionTimeoutMs(sessionExpireMs);
-            String userInformation = url.getUserInformation();
-            if (userInformation != null && userInformation.length() > 0) {
-                builder = builder.authorization("digest", userInformation.getBytes());
+                    .retryPolicy(new RetryNTimes(1, 1000)) // 重试的时候，间隔1s，发起1次重试
+                    .connectionTimeoutMs(timeout) // 如果尝试连接超过5s都没连上的话，此时的话就会进行重试
+                    .sessionTimeoutMs(sessionExpireMs); // 会话过期的时间，断开连接超过1分钟，此时会话就会过期
+            String authority = url.getAuthority();
+            if (authority != null && authority.length() > 0) {
+                builder = builder.authorization("digest", authority.getBytes());
             }
             client = builder.build();
             client.getConnectionStateListenable().addListener(new CuratorConnectionStateListener(url));
             client.start();
+            // 阻塞住一直到跟zk成功建立连接为止
             boolean connected = client.blockUntilConnected(timeout, TimeUnit.MILLISECONDS);
             if (!connected) {
                 throw new IllegalStateException("zookeeper not connected");
@@ -103,14 +108,18 @@ public class Curator5ZookeeperClient extends AbstractZookeeperClient<Curator5Zoo
     public void createEphemeral(String path) {
         try {
             client.create().withMode(CreateMode.EPHEMERAL).forPath(path);
-        } catch (NodeExistsException e) {
+        }
+        // node已经存在了，你注册的服务实例，之前已经注册过了，你就不能重复注册
+        catch (NodeExistsException e) {
             logger.warn("ZNode " + path + " already exists, since we will only try to recreate a node on a session expiration" +
                     ", this duplication might be caused by a delete delay from the zk server, which means the old expired session" +
                     " may still holds this ZNode and the server just hasn't got time to do the deletion. In this case, " +
                     "we can just try to delete and create again.", e);
+            // 如果有一个重复注册的过程，此时怎么处理，先删除那个znode，再去重新创建一个临时节点
             deletePath(path);
             createEphemeral(path);
         } catch (Exception e) {
+            // 创建过程中，如果说跟zk有链接问题，或者是zk自己有问题，此时就会出事儿
             throw new IllegalStateException(e.getMessage(), e);
         }
     }
@@ -295,6 +304,9 @@ public class Curator5ZookeeperClient extends AbstractZookeeperClient<Curator5Zoo
                 nodeCache.getListenable().addListener(nodeCacheListener, executor);
             }
 
+            // 大概可以做一个推测，他肯定是说，把你的监听器施加操作，在你的内存里做一个缓存
+            // 再通过一个线程池提交异步任务，异步化的去做施加监听器的操作
+
             nodeCache.start();
         } catch (Exception e) {
             throw new IllegalStateException("Add nodeCache listener for path:" + path, e);
@@ -334,17 +346,18 @@ public class Curator5ZookeeperClient extends AbstractZookeeperClient<Curator5Zoo
 
         @Override
         public void nodeChanged() throws Exception {
+            // 如果说有对应的节点的值的变化，此时就会回调这里
             ChildData childData = nodeCacheMap.get(path).getCurrentData();
             String content = null;
             EventType eventType;
             if (childData == null) {
-                eventType = EventType.NodeDeleted;
+                eventType = EventType.NodeDeleted; // 就说明出现了一个node delete删除事件
             } else if (childData.getStat().getVersion() == 0) {
                 content = new String(childData.getData(), CHARSET);
-                eventType = EventType.NodeCreated;
+                eventType = EventType.NodeCreated; // 就说明有一个node创建的一个事件
             } else {
                 content = new String(childData.getData(), CHARSET);
-                eventType = EventType.NodeDataChanged;
+                eventType = EventType.NodeDataChanged; // node数据值的变化
             }
             dataListener.dataChanged(path, content, eventType);
         }
@@ -392,9 +405,11 @@ public class Curator5ZookeeperClient extends AbstractZookeeperClient<Curator5Zoo
 
         public CuratorConnectionStateListener(URL url) {
             this.timeout = url.getParameter(TIMEOUT_KEY, DEFAULT_CONNECTION_TIMEOUT_MS);
-            this.sessionExpireMs = url.getParameter(SESSION_KEY, DEFAULT_SESSION_TIMEOUT_MS);
+            this.sessionExpireMs = url.getParameter(ZK_SESSION_EXPIRE_KEY, DEFAULT_SESSION_TIMEOUT_MS);
         }
 
+        // 跟zk的连接建立了之后，一般来说你都得关注一下跟这个zk之间的连接
+        // 如果跟zk的连接有断开，此时会回调通知你的
         @Override
         public void stateChanged(CuratorFramework client, ConnectionState state) {
             long sessionId = UNKNOWN_SESSION_ID;

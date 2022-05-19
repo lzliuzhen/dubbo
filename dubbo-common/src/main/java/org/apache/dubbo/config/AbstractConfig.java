@@ -31,13 +31,11 @@ import org.apache.dubbo.common.utils.MethodUtils;
 import org.apache.dubbo.common.utils.ReflectUtils;
 import org.apache.dubbo.common.utils.StringUtils;
 import org.apache.dubbo.config.context.ConfigManager;
-import org.apache.dubbo.config.context.ConfigMode;
 import org.apache.dubbo.config.support.Nested;
 import org.apache.dubbo.config.support.Parameter;
 import org.apache.dubbo.rpc.model.ApplicationModel;
 import org.apache.dubbo.rpc.model.ModuleModel;
 import org.apache.dubbo.rpc.model.ScopeModel;
-import org.apache.dubbo.rpc.model.ScopeModelUtil;
 
 import java.beans.BeanInfo;
 import java.beans.IntrospectionException;
@@ -60,6 +58,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
 import static org.apache.dubbo.common.utils.ClassUtils.isSimpleType;
 import static org.apache.dubbo.common.utils.ReflectUtils.findMethodByMethodSignature;
@@ -109,6 +108,9 @@ public abstract class AbstractConfig implements Serializable {
      * the extension spi instance needs to be reinitialized after changing the model!
      */
     protected ScopeModel scopeModel;
+
+    // 我们在一些源码里，可以发现说，他这个model是一个组件体系，ScopeModel是一个基础
+    // ScopeModel类型是可以转换为ModuleModel、ApplicationModel
 
     public AbstractConfig() {
         this(ApplicationModel.defaultModel());
@@ -188,10 +190,9 @@ public abstract class AbstractConfig implements Serializable {
                             continue;
                         }
                         // get parameter key
+                        key = calculatePropertyFromGetter(name);
                         if (parameter != null && parameter.key().length() > 0) {
                             key = parameter.key();
-                        } else {
-                            key = calculatePropertyFromGetter(name);
                         }
                     } else { // as attributes
                         // filter non attribute
@@ -199,7 +200,7 @@ public abstract class AbstractConfig implements Serializable {
                             continue;
                         }
                         // get attribute name
-                        String propertyName = calculateAttributeFromGetter(name);
+                        String propertyName = calculateAttributeFromGetter(method.getName());
                         // convert camelCase/snake_case to kebab-case
                         key = StringUtils.convertToSplitName(propertyName, "-");
                     }
@@ -251,14 +252,17 @@ public abstract class AbstractConfig implements Serializable {
         }
     }
 
+    protected static Set<String> getSubProperties(Map<String, String> properties, String prefix) {
+        return properties.keySet().stream().filter(k -> k.contains(prefix)).map(k -> {
+            k = k.substring(prefix.length());
+            return k.substring(0, k.indexOf("."));
+        }).collect(Collectors.toSet());
+    }
+
     protected static String extractPropertyName(String setter) {
         String propertyName = setter.substring("set".length());
         propertyName = propertyName.substring(0, 1).toLowerCase() + propertyName.substring(1);
         return propertyName;
-    }
-
-    private static String calculatePropertyToGetter(String name) {
-        return "get" + name.substring(0, 1).toUpperCase() + name.substring(1);
     }
 
     private static String calculatePropertyFromGetter(String name) {
@@ -284,7 +288,6 @@ public abstract class AbstractConfig implements Serializable {
 
     private static Map<String, String> invokeGetParameters(Class c, Object o) {
         try {
-
             Method method = findMethodByMethodSignature(c, "getParameters", null);
             if (method != null && isParametersGetter(method)) {
                 return (Map<String, String>) method.invoke(o);
@@ -360,12 +363,12 @@ public abstract class AbstractConfig implements Serializable {
         }
 
         Map<String, String> result = new HashMap<>();
-        String pre = (StringUtils.isNotEmpty(prefix) ? prefix + "." : "");
+        String pre = (prefix != null && prefix.length() > 0 ? prefix + "." : "");
         for (Map.Entry<String, String> entry : parameters.entrySet()) {
             String key = entry.getKey();
             String value = entry.getValue();
             result.put(pre + key, value);
-            // For compatibility, key like "registry-type" will have a duplicate key "registry.type"
+            // For compatibility, key like "registry-type" will has a duplicate key "registry.type"
             if (Arrays.binarySearch(Constants.DOT_COMPATIBLE_KEYS, key) >= 0) {
                 result.put(pre + key.replace('-', '.'), value);
             }
@@ -421,7 +424,6 @@ public abstract class AbstractConfig implements Serializable {
      *   }
      * }
      * </pre>
-     *
      * @param oldScopeModel
      * @param newScopeModel
      */
@@ -439,7 +441,7 @@ public abstract class AbstractConfig implements Serializable {
         return scopeModel.getExtensionLoader(type);
     }
 
-    @Parameter(excluded = true)
+    @Parameter(excluded = true, attribute = true)
     public String getId() {
         return id;
     }
@@ -520,7 +522,7 @@ public abstract class AbstractConfig implements Serializable {
     }
 
     private static BeanInfo getBeanInfo(Class cls) {
-        BeanInfo beanInfo;
+        BeanInfo beanInfo = null;
         try {
             beanInfo = Introspector.getBeanInfo(cls);
         } catch (IntrospectionException e) {
@@ -565,84 +567,6 @@ public abstract class AbstractConfig implements Serializable {
         return CommonConstants.DUBBO + "." + getTagName(cls);
     }
 
-    public ConfigMode getConfigMode() {
-        return getApplicationModel().getApplicationConfigManager().getConfigMode();
-    }
-
-    public void overrideWithConfig(AbstractConfig newOne, boolean overrideAll) {
-        if (!Objects.equals(this.getClass(), newOne.getClass())) {
-            // ignore if two config is not the same class
-            return;
-        }
-
-        List<Method> methods = MethodUtils.getMethods(this.getClass(), method -> method.getDeclaringClass() != Object.class);
-        for (Method method : methods) {
-            try {
-                Method getterMethod;
-                try {
-                    String propertyName = extractPropertyName(method.getName());
-                    String getterName = calculatePropertyToGetter(propertyName);
-                    getterMethod = this.getClass().getDeclaredMethod(getterName);
-                } catch (Exception ignore) {
-                    continue;
-                }
-
-                if (MethodUtils.isSetter(method)) {
-                    Object oldOne = getterMethod.invoke(this);
-
-                    // if old one is null or need to override
-                    if (overrideAll || oldOne == null) {
-                        Object newResult = getterMethod.invoke(newOne);
-                        // if new one is non-null and new one is not equals old one
-                        if (newResult != null && Objects.equals(newResult, oldOne)) {
-                            method.invoke(this, newResult);
-                        }
-                    }
-                } else if (isParametersSetter(method)) {
-                    Object oldOne = getterMethod.invoke(this);
-                    Object newResult = getterMethod.invoke(newOne);
-
-                    Map<String, String> oldMap = null;
-                    if (oldOne instanceof Map) {
-                        oldMap = (Map) oldOne;
-                    }
-
-                    Map<String, String> newMap = null;
-                    if (newResult instanceof Map) {
-                        newMap = (Map) newResult;
-                    }
-
-                    // if new map is null, skip
-                    if (newMap == null) {
-                        continue;
-                    }
-
-                    // if old map is null, override with new map
-                    if (oldMap == null) {
-                        invokeSetParameters(newMap, this);
-                        continue;
-                    }
-
-                    // if mode is OVERRIDE_IF_ABSENT, put all old map entries to new map, will override the same key
-                    // if mode is OVERRIDE_ALL, put all keyed entries not in new map from old map to new map (ignore the same key appeared in old map)
-                    if (overrideAll) {
-                        oldMap.forEach(newMap::putIfAbsent);
-                    } else {
-                        newMap.putAll(oldMap);
-                    }
-
-                    invokeSetParameters(newMap, this);
-                } else if (isNestedSetter(this, method)) {
-                    // not support
-                }
-
-            } catch (Throwable t) {
-                logger.error("Failed to override field value of config bean: " + this, t);
-                throw new IllegalStateException("Failed to override field value of config bean: " + this, t);
-            }
-        }
-    }
-
     /**
      * Dubbo config property override
      */
@@ -650,12 +574,17 @@ public abstract class AbstractConfig implements Serializable {
         refreshed.set(true);
         try {
             // check and init before do refresh
+            // 在这个里面，比较关键的一个初始化的操作，就是给了一个ProviderConfig
+            // provider服务实例对应的一些信息都是在里面的
             preProcessRefresh();
 
+            // model组件体系对整个dubbo源码的运行很关键的
+            // SPI机制使用的入口，repository，environment，bean factory，等等，很多通用的组件
+            // 在这里，核心就是去拿到你的一些配置信息
             Environment environment = getScopeModel().getModelEnvironment();
             List<Map<String, String>> configurationMaps = environment.getConfigurationMaps();
 
-            // Search props starts with PREFIX in order
+            // Search props starts with PREFIX in order，这种代码，其实都不是太紧要
             String preferredPrefix = null;
             for (String prefix : getPrefixes()) {
                 if (ConfigurationUtils.hasSubProperties(configurationMaps, prefix)) {
@@ -666,7 +595,8 @@ public abstract class AbstractConfig implements Serializable {
             if (preferredPrefix == null) {
                 preferredPrefix = getPrefixes().get(0);
             }
-            // Extract sub props (which key was starts with preferredPrefix)
+
+            // Extract sub props (which key was starts with preferredPrefix) 这种代码，也都不是太紧要，配置信息的处理
             Collection<Map<String, String>> instanceConfigMaps = environment.getConfigurationMaps(this, preferredPrefix);
             Map<String, String> subProperties = ConfigurationUtils.getSubProperties(instanceConfigMaps, preferredPrefix);
             InmemoryConfiguration subPropsConfiguration = new InmemoryConfiguration(subProperties);
@@ -685,10 +615,19 @@ public abstract class AbstractConfig implements Serializable {
                     " with prefix [" + preferredPrefix +
                     "], extracted props: " + subProperties);
             }
-
+            // 很明显，看起来，就是在进行一些配置信息之类的东西，使用反射做一个注入，注入给我们需要的方法
             assignProperties(this, environment, subProperties, subPropsConfiguration);
 
-            // process extra refresh of subclass, e.g. refresh method configs
+            // process extra refresh of sub class, e.g. refresh method configs
+
+            // 大家看源码的时候，脑子一定要高度紧张
+            // 上面这段源码到底是他的核心任务是处理什么，preferredPrefix是关键
+            // dubbo.service.org.apache.dubbo.demo.DemoService
+            // dubbo.service代表dubbo的一个服务名称的一个固定的前缀，固定拼接的
+            // 中间的org.apache.dubbo.demo，其实是从你的包名里截取出来的，最后加上服务接口的接口名
+            // 很可能，是把这串东西，作为当前这个dubbo服务的全限定的名字
+            // 这段refresh的代码，核心的用意就在于处理出来这个preferredPrefix，其他的配置信息也会一并做一些处理
+
             processExtraRefresh(preferredPrefix, subPropsConfiguration);
 
         } catch (Exception e) {
@@ -700,34 +639,21 @@ public abstract class AbstractConfig implements Serializable {
     }
 
     private void assignProperties(Object obj, Environment environment, Map<String, String> properties, InmemoryConfiguration configuration) {
-        // if old one (this) contains non-null value, do not override
-        boolean overrideIfAbsent = getConfigMode() == ConfigMode.OVERRIDE_IF_ABSENT;
-
-        // even if old one (this) contains non-null value, do override
-        boolean overrideAll = getConfigMode() == ConfigMode.OVERRIDE_ALL;
-
         // loop methods, get override value and set the new value back to method
-        List<Method> methods = MethodUtils.getMethods(obj.getClass(), method -> method.getDeclaringClass() != Object.class);
+        Method[] methods = obj.getClass().getMethods();
         for (Method method : methods) {
             if (MethodUtils.isSetter(method)) {
                 String propertyName = extractPropertyName(method.getName());
-
-                // if config mode is OVERRIDE_IF_ABSENT and property has set, skip
-                if (overrideIfAbsent && isPropertySet(propertyName)) {
-                    continue;
-                }
-
                 // convert camelCase/snake_case to kebab-case
                 String kebabPropertyName = StringUtils.convertToSplitName(propertyName, "-");
 
                 try {
                     String value = StringUtils.trim(configuration.getString(kebabPropertyName));
                     // isTypeMatch() is called to avoid duplicate and incorrect update, for example, we have two 'setGeneric' methods in ReferenceConfig.
-                    if (StringUtils.hasText(value)
-                        && ClassUtils.isTypeMatch(method.getParameterTypes()[0], value)
-                        && !isIgnoredAttribute(obj.getClass(), propertyName)) {
+                    if (StringUtils.hasText(value) && ClassUtils.isTypeMatch(method.getParameterTypes()[0], value) &&
+                        !isIgnoredAttribute(obj.getClass(), propertyName)) {
                         value = environment.resolvePlaceholders(value);
-                        method.invoke(obj, ClassUtils.convertPrimitive(ScopeModelUtil.getFrameworkModel(getScopeModel()), method.getParameterTypes()[0], value));
+                        method.invoke(obj, ClassUtils.convertPrimitive(method.getParameterTypes()[0], value));
                     }
                 } catch (Exception e) {
                     logger.info("Failed to override the property " + method.getName() + " in " +
@@ -736,46 +662,15 @@ public abstract class AbstractConfig implements Serializable {
                 }
             } else if (isParametersSetter(method)) {
                 String propertyName = extractPropertyName(method.getName());
-
-                // get old map from original obj
-                Map<String, String> oldMap = null;
-                try {
-                    String getterName = calculatePropertyToGetter(propertyName);
-                    Method getterMethod = this.getClass().getDeclaredMethod(getterName);
-                    Object oldOne = getterMethod.invoke(this);
-                    if (oldOne instanceof Map) {
-                        oldMap = (Map) oldOne;
-                    }
-                } catch (Exception ignore) {
-
-                }
-
                 String value = StringUtils.trim(configuration.getString(propertyName));
-                Map<String, String> parameterMap;
+                Map<String, String> parameterMap = null;
                 if (StringUtils.hasText(value)) {
                     parameterMap = StringUtils.parseParameters(value);
                 } else {
                     // in this case, maybe parameters.item3=value3.
                     parameterMap = ConfigurationUtils.getSubProperties(properties, PARAMETERS);
                 }
-                Map<String, String> newMap = convert(parameterMap, "");
-
-                // if old map is null, directly set params
-                if (oldMap == null) {
-                    invokeSetParameters(newMap, obj);
-                    continue;
-                }
-
-                // if mode is OVERRIDE_IF_ABSENT, put all old map entries to new map, will override the same key
-                // if mode is OVERRIDE_ALL, put all keyed entries not in new map from old map to new map (ignore the same key appeared in old map)
-                // if mode is others, override with new map
-                if (overrideIfAbsent) {
-                    newMap.putAll(oldMap);
-                } else if (overrideAll) {
-                    oldMap.forEach(newMap::putIfAbsent);
-                }
-
-                invokeSetParameters(newMap, obj);
+                invokeSetParameters(convert(parameterMap, ""), obj);
             } else if (isNestedSetter(obj, method)) {
                 try {
                     Class<?> clazz = method.getParameterTypes()[0];
@@ -790,20 +685,6 @@ public abstract class AbstractConfig implements Serializable {
                 }
             }
         }
-    }
-
-    private boolean isPropertySet(String propertyName) {
-        try {
-            String getterName = calculatePropertyToGetter(propertyName);
-            Method getterMethod = this.getClass().getDeclaredMethod(getterName);
-            Object oldOne = getterMethod.invoke(this);
-            if (oldOne != null) {
-                return true;
-            }
-        } catch (Exception ignore) {
-
-        }
-        return false;
     }
 
     private void invokeSetParameters(Map<String, String> values, Object obj) {
@@ -825,7 +706,6 @@ public abstract class AbstractConfig implements Serializable {
             try {
                 getter = clazz.getMethod("is" + capitalizePropertyName);
             } catch (NoSuchMethodException ex) {
-                // ignore
             }
         }
 
@@ -1000,7 +880,7 @@ public abstract class AbstractConfig implements Serializable {
                     continue;
                 }
                 String propertyName = calculateAttributeFromGetter(method.getName());
-                // filter non-writable property, exclude non property methods, fix #4225
+                // filter non writable property, exclude non property methods, fix #4225
                 if (!isWritableProperty(beanInfo, propertyName)) {
                     continue;
                 }

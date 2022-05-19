@@ -17,7 +17,6 @@
 package org.apache.dubbo.common.convert.multiple;
 
 import org.apache.dubbo.common.utils.CollectionUtils;
-import org.apache.dubbo.rpc.model.FrameworkModel;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -56,7 +55,7 @@ public class StringToSetConverterTest {
 
     @BeforeEach
     public void init() {
-        converter = new StringToSetConverter(FrameworkModel.defaultModel());
+        converter = new StringToSetConverter();
     }
 
     @Test

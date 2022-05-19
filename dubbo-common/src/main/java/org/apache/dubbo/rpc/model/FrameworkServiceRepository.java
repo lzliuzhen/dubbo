@@ -17,6 +17,8 @@
 package org.apache.dubbo.rpc.model;
 
 import org.apache.dubbo.common.URL;
+import org.apache.dubbo.common.logger.Logger;
+import org.apache.dubbo.common.logger.LoggerFactory;
 import org.apache.dubbo.common.utils.StringUtils;
 
 import java.util.ArrayList;
@@ -34,8 +36,9 @@ import static org.apache.dubbo.common.BaseServiceMetadata.versionFromServiceKey;
  * Service repository for framework
  */
 public class FrameworkServiceRepository {
-
     private FrameworkModel frameworkModel;
+
+    private static final Logger logger = LoggerFactory.getLogger(FrameworkServiceRepository.class);
 
     // useful to find a provider model quickly with group/serviceInterfaceName:version
     private ConcurrentMap<String, ProviderModel> providers = new ConcurrentHashMap<>();
@@ -62,10 +65,10 @@ public class FrameworkServiceRepository {
     }
 
     public void unregisterProvider(ProviderModel providerModel) {
-        providers.remove(providerModel.getServiceKey());
-        String keyWithoutGroup = keyWithoutGroup(providerModel.getServiceKey());
-        providersWithoutGroup.remove(keyWithoutGroup);
-        providerUrlsWithoutGroup.remove(keyWithoutGroup);
+        String key = keyWithoutGroup(providerModel.getServiceKey());
+        providers.remove(key);
+        providersWithoutGroup.remove(key);
+        providerUrlsWithoutGroup.remove(key);
     }
 
     public ProviderModel lookupExportedServiceWithoutGroup(String key) {

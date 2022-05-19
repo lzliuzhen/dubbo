@@ -21,36 +21,41 @@ import org.apache.dubbo.common.beans.support.InstantiationStrategy;
 import org.apache.dubbo.common.extension.ExtensionAccessor;
 import org.apache.dubbo.common.extension.ExtensionAccessorAware;
 import org.apache.dubbo.common.extension.ExtensionPostProcessor;
-import org.apache.dubbo.common.logger.Logger;
-import org.apache.dubbo.common.logger.LoggerFactory;
-import org.apache.dubbo.common.resource.Disposable;
 import org.apache.dubbo.common.utils.StringUtils;
 import org.apache.dubbo.rpc.model.ScopeModelAccessor;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
  * A bean factory for internal sharing.
+ *
+ * 他是dubbo框架自己内部实现的一个bean工厂，bean工厂是管理的这些bean是用于在dubbo框架内部进行共享的
+ * 非常值得我们下一讲，深入的来讲解一下
+ *
+ * model组件体系、结合实际使用案例的SPI扩展机制的实现、dubbo内部的bean容器
+ *
  */
 public class ScopeBeanFactory {
 
-    protected static final Logger LOGGER = LoggerFactory.getLogger(ScopeBeanFactory.class);
-
+    // factory都是可以挂父级组件的，组成一颗树
     private final ScopeBeanFactory parent;
+    // extension扩展实例的获取组件，有了这个东西，就有了对SPI机制使用的权限
     private ExtensionAccessor extensionAccessor;
+    // extension实例后处理器
     private List<ExtensionPostProcessor> extensionPostProcessors;
+    // 每一个class都有一个AtomicInteger作为一个计数器
     private Map<Class, AtomicInteger> beanNameIdCounterMap = new ConcurrentHashMap<>();
-    private List<BeanInfo> registeredBeanInfos = new CopyOnWriteArrayList<>();
+    // 注册过的bean实例信息
+    private List<BeanInfo> registeredBeanInfos = Collections.synchronizedList(new ArrayList<>());
+    // 初始化策略逻辑，bean实例的初始化
     private InstantiationStrategy instantiationStrategy;
-    private AtomicBoolean destroyed = new AtomicBoolean();
 
     public ScopeBeanFactory(ScopeBeanFactory parent, ExtensionAccessor extensionAccessor) {
         this.parent = parent;
@@ -71,25 +76,29 @@ public class ScopeBeanFactory {
         }
     }
 
+    // 你是bean管理的容器
     public <T> T registerBean(Class<T> bean) throws ScopeBeanException {
+        // 默认来说name可以是null
         return this.getOrRegisterBean(null, bean);
     }
 
+    // name也是可以自己设置的
     public <T> T registerBean(String name, Class<T> clazz) throws ScopeBeanException {
         return getOrRegisterBean(name, clazz);
     }
 
     private <T> T createAndRegisterBean(String name, Class<T> clazz) {
-        checkDestroyed();
         T instance = getBean(name, clazz);
         if (instance != null) {
             throw new ScopeBeanException("already exists bean with same name and type, name=" + name + ", type=" + clazz.getName());
         }
         try {
+            // 直接就用你的实现类的class，初始化了一个实例对象
             instance = instantiationStrategy.instantiate(clazz);
         } catch (Throwable e) {
             throw new ScopeBeanException("create bean instance failed, type=" + clazz.getName(), e);
         }
+        // 实例化一个bean是很简单的
         registerBean(name, instance);
         return instance;
     }
@@ -99,7 +108,6 @@ public class ScopeBeanFactory {
     }
 
     public void registerBean(String name, Object bean) {
-        checkDestroyed();
         // avoid duplicated register same bean
         if (containsBean(name, bean)) {
             return;
@@ -157,7 +165,6 @@ public class ScopeBeanFactory {
     }
 
     private void initializeBean(String name, Object bean) {
-        checkDestroyed();
         try {
             if (bean instanceof ExtensionAccessorAware) {
                 ((ExtensionAccessorAware) bean).setExtensionAccessor(extensionAccessor);
@@ -197,13 +204,14 @@ public class ScopeBeanFactory {
     }
 
     private <T> T getBeanInternal(String name, Class<T> type) {
-        checkDestroyed();
         // All classes are derived from java.lang.Object, cannot filter bean by it
         if (type == Object.class) {
             return null;
         }
         List<BeanInfo> candidates = null;
         BeanInfo firstCandidate = null;
+
+        // type就是属于你的bean的class类型
         for (BeanInfo beanInfo : registeredBeanInfos) {
             // if required bean type is same class/superclass/interface of the registered bean
             if (type.isAssignableFrom(beanInfo.instance.getClass())) {
@@ -238,29 +246,8 @@ public class ScopeBeanFactory {
         return null;
     }
 
-    public void destroy() {
-        if (destroyed.compareAndSet(false, true)){
-            for (BeanInfo beanInfo : registeredBeanInfos) {
-                if (beanInfo.instance instanceof Disposable) {
-                    try {
-                        Disposable beanInstance = (Disposable) beanInfo.instance;
-                        beanInstance.destroy();
-                    } catch (Throwable e) {
-                        LOGGER.error("An error occurred when destroy bean [name=" + beanInfo.name + ", bean=" + beanInfo.instance + "]: " + e, e);
-                    }
-                }
-            }
-            registeredBeanInfos.clear();
-        }
-    }
-
-    private void checkDestroyed() {
-        if (destroyed.get()) {
-            throw new IllegalStateException("ScopeBeanFactory is destroyed");
-        }
-    }
-
     static class BeanInfo {
+        // bean名称和一个bean实例
         private String name;
         private Object instance;
 

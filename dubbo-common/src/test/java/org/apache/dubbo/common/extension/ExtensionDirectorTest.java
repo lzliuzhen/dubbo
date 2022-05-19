@@ -25,7 +25,6 @@ import org.apache.dubbo.common.extension.director.impl.TestModuleService;
 import org.apache.dubbo.rpc.model.ApplicationModel;
 import org.apache.dubbo.rpc.model.FrameworkModel;
 import org.apache.dubbo.rpc.model.ModuleModel;
-
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -266,14 +265,5 @@ public class ExtensionDirectorTest {
         Assertions.assertNull(frameworkService.getAppProvider());
         Assertions.assertNull(frameworkService.getModuleProvider());
 
-        Assertions.assertFalse(moduleService.isDestroyed());
-        Assertions.assertFalse(appService.isDestroyed());
-        Assertions.assertFalse(frameworkService.isDestroyed());
-
-        // destroy
-        frameworkModel.destroy();
-        Assertions.assertTrue(moduleService.isDestroyed());
-        Assertions.assertTrue(appService.isDestroyed());
-        Assertions.assertTrue(frameworkService.isDestroyed());
     }
 }

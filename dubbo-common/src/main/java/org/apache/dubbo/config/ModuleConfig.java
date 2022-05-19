@@ -66,14 +66,14 @@ public class ModuleConfig extends AbstractConfig {
 
     /**
      * Whether start module in background.
-     * If start in background, do not await finish on Spring ContextRefreshedEvent.
+     * If start in backgound, do not await finish on Spring ContextRefreshedEvent.
      *
      * @see org.apache.dubbo.config.spring.context.DubboDeployApplicationListener
      */
     private Boolean background;
 
     /**
-     * Weather the reference is referred asynchronously
+     * Weather the reference is refer asynchronously
      */
     private Boolean referAsync;
 
@@ -96,17 +96,8 @@ public class ModuleConfig extends AbstractConfig {
         super(ApplicationModel.defaultModel().getDefaultModule());
     }
 
-    public ModuleConfig(ModuleModel moduleModel) {
-        super(moduleModel);
-    }
-
     public ModuleConfig(String name) {
         this();
-        setName(name);
-    }
-
-    public ModuleConfig(ModuleModel moduleModel, String name) {
-        this(moduleModel);
         setName(name);
     }
 

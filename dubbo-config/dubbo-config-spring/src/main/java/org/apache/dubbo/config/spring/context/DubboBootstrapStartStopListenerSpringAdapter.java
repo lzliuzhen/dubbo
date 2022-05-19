@@ -20,7 +20,6 @@ import org.apache.dubbo.config.bootstrap.DubboBootstrap;
 import org.apache.dubbo.config.bootstrap.DubboBootstrapStartStopListener;
 import org.apache.dubbo.config.spring.context.event.DubboBootstrapStatedEvent;
 import org.apache.dubbo.config.spring.context.event.DubboBootstrapStopedEvent;
-
 import org.springframework.context.ApplicationContext;
 
 /**

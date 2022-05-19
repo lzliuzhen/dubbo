@@ -18,7 +18,6 @@ package org.apache.dubbo.qos.command.impl;
 
 import org.apache.dubbo.common.logger.Logger;
 import org.apache.dubbo.common.logger.LoggerFactory;
-import org.apache.dubbo.common.utils.ArrayUtils;
 import org.apache.dubbo.qos.command.BaseCommand;
 import org.apache.dubbo.qos.command.CommandContext;
 import org.apache.dubbo.registry.Registry;
@@ -32,18 +31,18 @@ import java.util.Collection;
 import java.util.List;
 
 public class BaseOffline implements BaseCommand {
-    private Logger logger = LoggerFactory.getLogger(BaseOffline.class);
+    private Logger logger = LoggerFactory.getLogger(OfflineInterface.class);
     public FrameworkServiceRepository serviceRepository;
 
     public BaseOffline(FrameworkModel frameworkModel) {
-        this.serviceRepository = frameworkModel.getServiceRepository();
+        this.serviceRepository = FrameworkModel.defaultModel().getServiceRepository();
     }
 
     @Override
     public String execute(CommandContext commandContext, String[] args) {
         logger.info("receive offline command");
         String servicePattern = ".*";
-        if (ArrayUtils.isNotEmpty(args)) {
+        if (args != null && args.length > 0) {
             servicePattern = args[0];
         }
 

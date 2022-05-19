@@ -27,6 +27,9 @@ import java.util.stream.Stream;
 /**
  * Invocation. (API, Prototype, NonThreadSafe)
  *
+ * 后续netty server接受到了请求之后，一通解析，应该就会知道是要调用什么
+ * 把解析出来的东西就可以放到Invocation里去
+ *
  * @serial Don't change the class name and package name.
  * @see org.apache.dubbo.rpc.Invoker#invoke(Invocation)
  * @see org.apache.dubbo.rpc.RpcInvocation

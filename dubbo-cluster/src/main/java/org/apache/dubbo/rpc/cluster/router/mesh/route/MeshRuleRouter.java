@@ -14,21 +14,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.dubbo.rpc.cluster.router.mesh.route;
 
 import org.apache.dubbo.common.URL;
-import org.apache.dubbo.common.logger.Logger;
-import org.apache.dubbo.common.logger.LoggerFactory;
 import org.apache.dubbo.common.utils.CollectionUtils;
-import org.apache.dubbo.common.utils.Holder;
-import org.apache.dubbo.common.utils.PojoUtils;
 import org.apache.dubbo.common.utils.StringUtils;
 import org.apache.dubbo.rpc.Invocation;
 import org.apache.dubbo.rpc.Invoker;
 import org.apache.dubbo.rpc.RpcException;
-import org.apache.dubbo.rpc.cluster.router.RouterSnapshotNode;
+import org.apache.dubbo.rpc.cluster.Router;
 import org.apache.dubbo.rpc.cluster.router.mesh.rule.VsDestinationGroup;
 import org.apache.dubbo.rpc.cluster.router.mesh.rule.destination.DestinationRule;
+import org.apache.dubbo.rpc.cluster.router.mesh.rule.destination.DestinationRuleSpec;
+import org.apache.dubbo.rpc.cluster.router.mesh.rule.destination.Subset;
 import org.apache.dubbo.rpc.cluster.router.mesh.rule.virtualservice.DubboMatchRequest;
 import org.apache.dubbo.rpc.cluster.router.mesh.rule.virtualservice.DubboRoute;
 import org.apache.dubbo.rpc.cluster.router.mesh.rule.virtualservice.DubboRouteDetail;
@@ -37,106 +36,159 @@ import org.apache.dubbo.rpc.cluster.router.mesh.rule.virtualservice.VirtualServi
 import org.apache.dubbo.rpc.cluster.router.mesh.rule.virtualservice.destination.DubboDestination;
 import org.apache.dubbo.rpc.cluster.router.mesh.rule.virtualservice.destination.DubboRouteDestination;
 import org.apache.dubbo.rpc.cluster.router.mesh.rule.virtualservice.match.StringMatch;
-import org.apache.dubbo.rpc.cluster.router.mesh.util.MeshRuleListener;
-import org.apache.dubbo.rpc.cluster.router.mesh.util.TracingContextProvider;
-import org.apache.dubbo.rpc.cluster.router.state.AbstractStateRouter;
-import org.apache.dubbo.rpc.cluster.router.state.BitList;
+import org.apache.dubbo.rpc.cluster.router.mesh.util.VsDestinationGroupRuleListener;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 
-import static org.apache.dubbo.rpc.cluster.router.mesh.route.MeshRuleConstants.DESTINATION_RULE_KEY;
-import static org.apache.dubbo.rpc.cluster.router.mesh.route.MeshRuleConstants.INVALID_APP_NAME;
-import static org.apache.dubbo.rpc.cluster.router.mesh.route.MeshRuleConstants.KIND_KEY;
-import static org.apache.dubbo.rpc.cluster.router.mesh.route.MeshRuleConstants.VIRTUAL_SERVICE_KEY;
 
-public abstract class MeshRuleRouter<T> extends AbstractStateRouter<T> implements MeshRuleListener {
+public class MeshRuleRouter implements Router, VsDestinationGroupRuleListener {
 
-    public static final Logger logger = LoggerFactory.getLogger(MeshRuleRouter.class);
+    private int priority = -500;
+    private boolean force = false;
+    private URL url;
 
-    private final Map<String, String> sourcesLabels;
-    private volatile BitList<Invoker<T>> invokerList = BitList.emptyList();
-    private volatile Set<String> remoteAppName = Collections.emptySet();
+    private volatile VsDestinationGroup vsDestinationGroup;
 
-    protected MeshRuleManager meshRuleManager;
-    protected Set<TracingContextProvider> tracingContextProviders;
+    private Map<String, String> sourcesLabels = new HashMap<>();
 
-    protected volatile MeshRuleCache<T> meshRuleCache = MeshRuleCache.emptyCache();
+    private volatile List<Invoker<?>> invokerList = new ArrayList<>();
+
+    private volatile Map<String, List<Invoker<?>>> subsetMap;
+
+    private volatile String remoteAppName;
+
+    private static final String INVALID_APP_NAME = "unknown";
 
     public MeshRuleRouter(URL url) {
-        super(url);
-        sourcesLabels = Collections.unmodifiableMap(new HashMap<>(url.getParameters()));
-        this.meshRuleManager = url.getOrDefaultModuleModel().getBeanFactory().getBean(MeshRuleManager.class);
-        this.tracingContextProviders = url.getOrDefaultModuleModel().getExtensionLoader(TracingContextProvider.class).getSupportedExtensionInstances();
+        this.url = url;
+        sourcesLabels.putAll(url.getParameters());
     }
 
     @Override
-    protected BitList<Invoker<T>> doRoute(BitList<Invoker<T>> invokers, URL url, Invocation invocation,
-                                          boolean needToPrintMessage, Holder<RouterSnapshotNode<T>> nodeHolder,
-                                          Holder<String> messageHolder) throws RpcException {
-        MeshRuleCache<T> ruleCache = this.meshRuleCache;
-        if (!ruleCache.containsRule()) {
-            if (needToPrintMessage) {
-                messageHolder.set("MeshRuleCache has not been built. Skip route.");
-            }
+    public URL getUrl() {
+        return url;
+    }
+
+    @Override
+    public <T> List<Invoker<T>> route(List<Invoker<T>> invokers, URL url, Invocation invocation) throws RpcException {
+
+        // 挺关键的，先是全根据你的rpc invocation，去获取dubbo route目标地址
+        // 就是说，一旦说你要是匹配上了一些规则后，此时就会把你的请求路由到你的目标地址去
+        // 这行代码执行完毕，此时就把我们的匹配规则都执行完毕，每个规则匹配上的，就对应了一个目标地址列表
+        // 拿到的就是匹配规则的目标地址列表
+        List<DubboRouteDestination> routeDestination = getDubboRouteDestination(invocation);
+
+        if (routeDestination == null) {
             return invokers;
+        } else {
+            // 首先，此时你拿到的目标地址列表，可能是多个
+            // 先是随机的拿到一个destination
+            DubboRouteDestination dubboRouteDestination = routeDestination.get(ThreadLocalRandom.current().nextInt(routeDestination.size()));
+            // 这个直接是一个嵌套获取
+            DubboDestination dubboDestination = dubboRouteDestination.getDestination();
+            // 再从里面拿到对应的一个subset值
+            String subset = dubboDestination.getSubset();
+
+            List<Invoker<?>> result;
+
+            Map<String, List<Invoker<?>>> subsetMapCopy = this.subsetMap;
+
+            //TODO make intersection with invokers
+            if (subsetMapCopy != null) {
+
+                do {
+                    // 就直接根据你的subset，就获取到了对应的invokers列表
+                    result = subsetMapCopy.get(subset);
+
+                    if (CollectionUtils.isNotEmpty(result)) {
+                        return (List) result;
+                    }
+
+                    // fallback
+                    // 在那个上面，如果说根据你的第一优先的subset获取到了invokers，就直接返回了
+                    // 否则的话呢，就会走fallback
+                    dubboRouteDestination = dubboDestination.getFallback();
+                    if (dubboRouteDestination == null) {
+                        break;
+                    }
+                    dubboDestination = dubboRouteDestination.getDestination();
+
+                    subset = dubboDestination.getSubset();
+                } while (true);
+
+                return null;
+            }
         }
 
-        BitList<Invoker<T>> result = new BitList<>(invokers.getOriginList(), true, invokers.getTailList());
+        return invokers;
+    }
 
-        StringBuilder stringBuilder = needToPrintMessage ? new StringBuilder() : null;
+    @Override
+    public <T> void notify(List<Invoker<T>> invokers) {
+        List invokerList = invokers == null ? Collections.emptyList() : invokers;
+        this.invokerList = invokerList;
+        registerAppRule(invokerList);
+        computeSubset();
+    }
 
-        // loop each application
-        for (String appName : ruleCache.getAppList()) {
-            // find destination by invocation
-            List<DubboRouteDestination> routeDestination = getDubboRouteDestination(ruleCache.getVsDestinationGroup(appName), invocation);
-            if (routeDestination != null) {
-                // aggregate target invokers
-                String subset = randomSelectDestination(ruleCache, appName, routeDestination, invokers);
-                if (subset != null) {
-                    BitList<Invoker<T>> destination = meshRuleCache.getSubsetInvokers(appName, subset);
-                    result = result.or(destination);
-                    if (stringBuilder != null) {
-                        stringBuilder.append("Match App: ").append(appName).append(" Subset: ").append(subset).append(" ");
+
+    private void registerAppRule(List<Invoker<?>> invokers) {
+        if (StringUtils.isEmpty(remoteAppName)) {
+            synchronized (this) {
+                if (StringUtils.isEmpty(remoteAppName) && CollectionUtils.isNotEmpty(invokers)) {
+                    for (Invoker invoker : invokers) {
+                        String applicationName = invoker.getUrl().getRemoteApplication();
+                        if (StringUtils.isNotEmpty(applicationName) && !INVALID_APP_NAME.equals(applicationName)) {
+                            remoteAppName = applicationName;
+                            MeshRuleManager.register(remoteAppName, this);
+                            break;
+                        }
                     }
                 }
             }
         }
-
-        // result = result.or(ruleCache.getUnmatchedInvokers());
-
-        // empty protection
-        if (result.isEmpty()) {
-            if (needToPrintMessage) {
-                messageHolder.set("Empty protection after routed.");
-            }
-            return invokers;
-        }
-
-        if (needToPrintMessage) {
-            messageHolder.set(stringBuilder.toString());
-        }
-        return invokers.and(result);
     }
 
-    /**
-     * Select RouteDestination by Invocation
-     */
-    protected List<DubboRouteDestination> getDubboRouteDestination(VsDestinationGroup vsDestinationGroup, Invocation invocation) {
+
+    // 如果说你的路由规则最新的变化，反向推送给你，此时就会回调做一个更新
+    // 这个东西肯定是从我们的rule路由规则里提取出来的
+    @Override
+    public void onRuleChange(VsDestinationGroup vsDestinationGroup) {
+        this.vsDestinationGroup = vsDestinationGroup;
+        computeSubset();
+    }
+
+    @Override
+    public boolean isRuntime() {
+        return true;
+    }
+
+    @Override
+    public boolean isForce() {
+        return force;
+    }
+
+    @Override
+    public int getPriority() {
+        return priority;
+    }
+
+    private List<DubboRouteDestination> getDubboRouteDestination(Invocation invocation) {
+        // 规则是如何进行解析，有配置变动，反向推送，然后进行解析，以及去重新处理和刷新一个invokers映射关系
+        // subset -> invokers是如何进行映射的
         if (vsDestinationGroup != null) {
+            // 拿到的是我们的匹配规则
             List<VirtualServiceRule> virtualServiceRuleList = vsDestinationGroup.getVirtualServiceRuleList();
-            if (CollectionUtils.isNotEmpty(virtualServiceRuleList)) {
+            if (virtualServiceRuleList.size() > 0) {
                 for (VirtualServiceRule virtualServiceRule : virtualServiceRuleList) {
-                    // match virtual service (by serviceName)
+                    // 在这里就是说封装了我们的规则匹配 + 目标地址匹配，这两个事情就做完了
                     DubboRoute dubboRoute = getDubboRoute(virtualServiceRule, invocation);
                     if (dubboRoute != null) {
-                        // match route detail (by params)
                         return getDubboRouteDestination(dubboRoute, invocation);
                     }
                 }
@@ -145,22 +197,21 @@ public abstract class MeshRuleRouter<T> extends AbstractStateRouter<T> implement
         return null;
     }
 
-    /**
-     * Match virtual service (by serviceName)
-     */
     protected DubboRoute getDubboRoute(VirtualServiceRule virtualServiceRule, Invocation invocation) {
+        // 你要调用的服务名称
         String serviceName = invocation.getServiceName();
 
         VirtualServiceSpec spec = virtualServiceRule.getSpec();
         List<DubboRoute> dubboRouteList = spec.getDubbo();
-        if (CollectionUtils.isNotEmpty(dubboRouteList)) {
+        if (dubboRouteList.size() > 0) {
             for (DubboRoute dubboRoute : dubboRouteList) {
+                // 刚开始就是先是拿到services，做一个服务名称的匹配
                 List<StringMatch> stringMatchList = dubboRoute.getServices();
                 if (CollectionUtils.isEmpty(stringMatchList)) {
                     return dubboRoute;
                 }
                 for (StringMatch stringMatch : stringMatchList) {
-                    if (stringMatch.isMatch(serviceName)) {
+                    if (StringMatch.isMatch(stringMatch, serviceName)) {
                         return dubboRoute;
                     }
                 }
@@ -169,190 +220,182 @@ public abstract class MeshRuleRouter<T> extends AbstractStateRouter<T> implement
         return null;
     }
 
-    /**
-     * Match route detail (by params)
-     */
+
     protected List<DubboRouteDestination> getDubboRouteDestination(DubboRoute dubboRoute, Invocation invocation) {
+
         List<DubboRouteDetail> dubboRouteDetailList = dubboRoute.getRoutedetail();
-        if (CollectionUtils.isNotEmpty(dubboRouteDetailList)) {
-            for (DubboRouteDetail dubboRouteDetail : dubboRouteDetailList) {
-                List<DubboMatchRequest> matchRequestList = dubboRouteDetail.getMatch();
-                if (CollectionUtils.isEmpty(matchRequestList)) {
-                    return dubboRouteDetail.getRoute();
-                }
-
-                if (matchRequestList.stream().allMatch(
-                    request -> request.isMatch(invocation, sourcesLabels, tracingContextProviders))) {
-                    return dubboRouteDetail.getRoute();
-                }
+        if (dubboRouteDetailList.size() > 0) {
+            // 对每一个dubbo route detail去做一个匹配
+            DubboRouteDetail dubboRouteDetail = findMatchDubboRouteDetail(dubboRouteDetailList, invocation);
+            if (dubboRouteDetail != null) {
+                // 如果说能够匹配上，此时就可以拿到这个detail里面的route
+                return dubboRouteDetail.getRoute();
             }
         }
 
         return null;
     }
 
-    /**
-     * Find out target invokers from RouteDestination
-     */
-    protected String randomSelectDestination(MeshRuleCache<T> meshRuleCache, String appName, List<DubboRouteDestination> routeDestination, BitList<Invoker<T>> availableInvokers) throws RpcException {
-        // randomly select one DubboRouteDestination from list by weight
-        int totalWeight = 0;
-        for (DubboRouteDestination dubboRouteDestination : routeDestination) {
-            totalWeight += Math.max(dubboRouteDestination.getWeight(), 1);
-        }
-        int target = ThreadLocalRandom.current().nextInt(totalWeight);
-        for (DubboRouteDestination destination : routeDestination) {
-            target -= Math.max(destination.getWeight(), 1);
-            if (target <= 0) {
-                // match weight
-                String result = computeDestination(meshRuleCache, appName, destination.getDestination(), availableInvokers);
-                if (result != null) {
-                    return result;
+    protected DubboRouteDetail findMatchDubboRouteDetail(List<DubboRouteDetail> dubboRouteDetailList, Invocation invocation) {
+
+        // 先从rpc调用里提取出来，方法名称，参数类型，参数值列表
+        String methodName = invocation.getMethodName();
+        String[] parameterTypeList = invocation.getCompatibleParamSignatures();
+        Object[] parameters = invocation.getArguments();
+
+
+        for (DubboRouteDetail dubboRouteDetail : dubboRouteDetailList) {
+            List<DubboMatchRequest> matchRequestList = dubboRouteDetail.getMatch();
+            if (CollectionUtils.isEmpty(matchRequestList)) {
+                return dubboRouteDetail;
+            }
+
+            boolean match = true;
+
+            //FIXME to deal with headers
+            for (DubboMatchRequest dubboMatchRequest : matchRequestList) {
+                if (!DubboMatchRequest.isMatch(dubboMatchRequest, methodName, parameterTypeList, parameters,
+                        sourcesLabels,
+                        new HashMap<>(), invocation.getAttachments(),
+                        new HashMap<>())) {
+                    match = false;
+                    break;
                 }
             }
-        }
 
-        // fall back
-        for (DubboRouteDestination destination : routeDestination) {
-            String result = computeDestination(meshRuleCache, appName, destination.getDestination(), availableInvokers);
-            if (result != null) {
-                return result;
+            if (match) {
+                return dubboRouteDetail;
             }
         }
         return null;
     }
 
-    /**
-     * Compute Destination Subset
-     */
-    protected String computeDestination(MeshRuleCache<T> meshRuleCache, String appName, DubboDestination dubboDestination, BitList<Invoker<T>> availableInvokers) throws RpcException {
-        String subset = dubboDestination.getSubset();
 
-        do {
-            BitList<Invoker<T>> result = meshRuleCache.getSubsetInvokers(appName, subset);
+    protected synchronized void computeSubset() {
+        if (CollectionUtils.isEmpty(invokerList)) {
+            this.subsetMap = null;
+            return;
+        }
 
-            if (CollectionUtils.isNotEmpty(result) && !availableInvokers.clone().and(result).isEmpty()) {
-                return subset;
-            }
+        if (vsDestinationGroup == null) {
+            this.subsetMap = null;
+            return;
+        }
 
-            // fall back
-            DubboRouteDestination dubboRouteDestination = dubboDestination.getFallback();
-            if (dubboRouteDestination == null) {
-                break;
-            }
-            dubboDestination = dubboRouteDestination.getDestination();
+        // 他此时会根据你的配置信息里的subset
+        // 此时通过解析和提取，做一个映射，会拿到每个subset的name名称对应的一批invoker机器列表
+        // map，name -> invokers
+        Map<String, List<Invoker<?>>> subsetMap = computeSubsetMap(invokerList, vsDestinationGroup.getDestinationRuleList());
 
-            if (dubboDestination == null) {
-                break;
-            }
-            subset = dubboDestination.getSubset();
-        } while (true);
-
-        return null;
+        if (subsetMap.size() == 0) {
+            this.subsetMap = null;
+        } else {
+            this.subsetMap = subsetMap;
+        }
     }
 
-    @Override
-    public void notify(BitList<Invoker<T>> invokers) {
-        BitList<Invoker<T>> invokerList = invokers == null ? BitList.emptyList() : invokers;
-        this.invokerList = invokerList.clone();
-        registerAppRule(invokerList);
-        computeSubset(this.meshRuleCache.getAppToVDGroup());
-    }
 
-    private void registerAppRule(BitList<Invoker<T>> invokers) {
-        Set<String> currentApplication = new HashSet<>();
-        if (CollectionUtils.isNotEmpty(invokers)) {
-            for (Invoker<T> invoker : invokers) {
-                String applicationName = invoker.getUrl().getRemoteApplication();
-                if (StringUtils.isNotEmpty(applicationName) && !INVALID_APP_NAME.equals(applicationName)) {
-                    currentApplication.add(applicationName);
+    protected Map<String, List<Invoker<?>>> computeSubsetMap(List<Invoker<?>> invokers, List<DestinationRule> destinationRules) {
+        Map<String, List<Invoker<?>>> subsetMap = new HashMap<>();
+
+        // 遍历的是我们的目标地址映射的规则
+        for (DestinationRule destinationRule : destinationRules) {
+            DestinationRuleSpec destinationRuleSpec = destinationRule.getSpec();
+            // 核心的是提取出来你的所有的subset配置
+            List<Subset> subsetList = destinationRuleSpec.getSubsets();
+            // 遍历你的subset配置
+            for (Subset subset : subsetList) {
+                String subsetName = subset.getName();
+                List<Invoker<?>> subsetInvokerList = new ArrayList<>();
+                subsetMap.put(subsetName, subsetInvokerList);
+
+                Map<String, String> labels = subset.getLabels();
+
+                // labels标签和我们的provider invoker实例集群，是如何映射的
+                for (Invoker<?> invoker : invokers) {
+                    // 每一个目标invoker都有一个url，这个url里面就会包含那个provider所有的信息，包括接口、方法、各种属性和参数
+                    Map<String, String> parameters = invoker.getUrl().getServiceParameters(url.getProtocolServiceKey());
+                    // 此时就会判断，如果你当前的这个provider invoker，他的各种各样的参数map跟labels标签都匹配上的话，此时就可以算做这个subset里的一台机器
+                    if (containMapKeyValue(parameters, labels)) {
+                        subsetInvokerList.add(invoker);
+                    }
                 }
             }
         }
 
-        if (!remoteAppName.equals(currentApplication)) {
-            synchronized (this) {
-                Set<String> current = new HashSet<>(currentApplication);
-                Set<String> previous = new HashSet<>(remoteAppName);
-                previous.removeAll(currentApplication);
-                current.removeAll(remoteAppName);
-                for (String app : current) {
-                    meshRuleManager.register(app, this);
-                }
-                for (String app : previous) {
-                    meshRuleManager.unregister(app, this);
-                }
-                remoteAppName = currentApplication;
-            }
-        }
+        return subsetMap;
     }
 
-    @Override
-    public synchronized void onRuleChange(String appName, List<Map<String, Object>> rules) {
-        // only update specified app's rule
-        Map<String, VsDestinationGroup> appToVDGroup = new ConcurrentHashMap<>(this.meshRuleCache.getAppToVDGroup());
-        try {
-            VsDestinationGroup vsDestinationGroup = new VsDestinationGroup();
-            vsDestinationGroup.setAppName(appName);
 
-            for (Map<String, Object> rule : rules) {
-                if (DESTINATION_RULE_KEY.equals(rule.get(KIND_KEY))) {
-                    DestinationRule destinationRule = PojoUtils.mapToPojo(rule, DestinationRule.class);
-                    vsDestinationGroup.getDestinationRuleList().add(destinationRule);
-                } else if (VIRTUAL_SERVICE_KEY.equals(rule.get(KIND_KEY))) {
-                    VirtualServiceRule virtualServiceRule = PojoUtils.mapToPojo(rule, VirtualServiceRule.class);
-                    vsDestinationGroup.getVirtualServiceRuleList().add(virtualServiceRule);
-                }
-            }
-            if (vsDestinationGroup.isValid()) {
-                appToVDGroup.put(appName, vsDestinationGroup);
-            }
-        } catch (Throwable t) {
-            logger.error("Error occurred when parsing rule component.", t);
+    protected boolean containMapKeyValue(Map<String, String> originMap, Map<String, String> inputMap) {
+        if (inputMap == null || inputMap.size() == 0) {
+            return true;
         }
 
-        computeSubset(appToVDGroup);
-    }
+        for (Map.Entry<String, String> entry : inputMap.entrySet()) {
+            String key = entry.getKey();
+            String value = entry.getValue();
 
-    @Override
-    public synchronized void clearRule(String appName) {
-        Map<String, VsDestinationGroup> appToVDGroup = new ConcurrentHashMap<>(this.meshRuleCache.getAppToVDGroup());
-        appToVDGroup.remove(appName);
-        computeSubset(appToVDGroup);
-    }
+            String originMapValue = originMap.get(key);
+            if (!value.equals(originMapValue)) {
+                return false;
+            }
+        }
 
-    protected void computeSubset(Map<String, VsDestinationGroup> vsDestinationGroupMap) {
-        this.meshRuleCache = MeshRuleCache.build(getUrl().getProtocolServiceKey(), this.invokerList, vsDestinationGroupMap);
+        return true;
     }
 
     @Override
     public void stop() {
-        for (String app : remoteAppName) {
-            meshRuleManager.unregister(app, this);
-        }
+        MeshRuleManager.unregister(this);
     }
 
     /**
-     * for ut only
+     * just for test
+     * @param vsDestinationGroup
      */
-    @Deprecated
-    public Set<String> getRemoteAppName() {
-        return remoteAppName;
+    protected void setVsDestinationGroup(VsDestinationGroup vsDestinationGroup) {
+        this.vsDestinationGroup = vsDestinationGroup;
     }
 
     /**
-     * for ut only
+     * just for test
+     * @param sourcesLabels
      */
-    @Deprecated
-    public BitList<Invoker<T>> getInvokerList() {
+    protected void setSourcesLabels(Map<String, String> sourcesLabels) {
+        this.sourcesLabels = sourcesLabels;
+    }
+
+    /**
+     * just for test
+     * @param invokerList
+     */
+    protected void setInvokerList(List<Invoker<?>> invokerList) {
+        this.invokerList = invokerList;
+    }
+
+    /**
+     * just for test
+     * @param subsetMap
+     */
+    protected void setSubsetMap(Map<String, List<Invoker<?>>> subsetMap) {
+        this.subsetMap = subsetMap;
+    }
+
+
+    public VsDestinationGroup getVsDestinationGroup() {
+        return vsDestinationGroup;
+    }
+
+    public Map<String, String> getSourcesLabels() {
+        return sourcesLabels;
+    }
+
+    public List<Invoker<?>> getInvokerList() {
         return invokerList;
     }
 
-    /**
-     * for ut only
-     */
-    @Deprecated
-    public MeshRuleCache<T> getMeshRuleCache() {
-        return meshRuleCache;
+    public Map<String, List<Invoker<?>>> getSubsetMap() {
+        return subsetMap;
     }
 }

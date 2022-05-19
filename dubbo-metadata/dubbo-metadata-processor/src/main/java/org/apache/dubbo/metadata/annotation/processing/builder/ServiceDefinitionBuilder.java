@@ -21,6 +21,7 @@ import org.apache.dubbo.metadata.definition.model.TypeDefinition;
 
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.TypeElement;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;

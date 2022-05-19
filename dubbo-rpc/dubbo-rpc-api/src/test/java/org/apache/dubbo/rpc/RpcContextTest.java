@@ -202,9 +202,4 @@ public class RpcContextTest {
         rpcContext.setObjectAttachments(map);
         Assertions.assertEquals(map, rpcContext.getObjectAttachments());
     }
-
-    @Test
-    public void testRestore() {
-
-    }
 }

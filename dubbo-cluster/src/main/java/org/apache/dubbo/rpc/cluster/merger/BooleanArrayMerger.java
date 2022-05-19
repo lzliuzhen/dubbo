@@ -37,8 +37,9 @@ public class BooleanArrayMerger implements Merger<boolean[]> {
         int index = 0;
         for (boolean[] array : items) {
             if (array != null) {
-                System.arraycopy(array, 0, result, index, array.length);
-                index += array.length;
+                for (boolean item : array) {
+                    result[index++] = item;
+                }
             }
         }
         return result;

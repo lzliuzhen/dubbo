@@ -19,30 +19,23 @@ package org.apache.dubbo.qos.probe.impl;
 import org.apache.dubbo.common.extension.Activate;
 import org.apache.dubbo.qos.probe.ReadinessProbe;
 import org.apache.dubbo.rpc.model.ApplicationModel;
-import org.apache.dubbo.rpc.model.FrameworkModel;
 import org.apache.dubbo.rpc.model.ModuleModel;
-
-import java.util.List;
 
 @Activate
 public class DeployerReadinessProbe implements ReadinessProbe {
-    private FrameworkModel frameworkModel;
 
-    public DeployerReadinessProbe(FrameworkModel frameworkModel) {
-        this.frameworkModel = frameworkModel;
+
+    private ApplicationModel applicationModel;
+
+    public DeployerReadinessProbe(ApplicationModel applicationModel) {
+        this.applicationModel = applicationModel;
     }
 
     @Override
     public boolean check() {
-        if (this.frameworkModel == null) {
-            this.frameworkModel = FrameworkModel.defaultModel();
-        }
-        List<ApplicationModel> applicationModels = frameworkModel.getApplicationModels();
-        for (ApplicationModel applicationModel : applicationModels) {
-            for (ModuleModel moduleModel : applicationModel.getModuleModels()) {
-                if (!moduleModel.getDeployer().isStarted()) {
-                    return false;
-                }
+        for (ModuleModel moduleModel : applicationModel.getModuleModels()) {
+            if (!moduleModel.getDeployer().isStarted()) {
+                return false;
             }
         }
         return true;

@@ -16,14 +16,13 @@
  */
 package org.apache.dubbo.qos.server.handler;
 
-import org.apache.dubbo.rpc.model.FrameworkModel;
-
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequest;
+import org.apache.dubbo.rpc.model.FrameworkModel;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
@@ -42,14 +41,14 @@ public class HttpProcessHandlerTest {
         ChannelFuture future = mock(ChannelFuture.class);
         when(context.writeAndFlush(any(FullHttpResponse.class))).thenReturn(future);
         HttpRequest message = Mockito.mock(HttpRequest.class);
-        when(message.uri()).thenReturn("test");
+        when(message.getUri()).thenReturn("test");
         HttpProcessHandler handler = new HttpProcessHandler(FrameworkModel.defaultModel());
         handler.channelRead0(context, message);
         verify(future).addListener(ChannelFutureListener.CLOSE);
         ArgumentCaptor<FullHttpResponse> captor = ArgumentCaptor.forClass(FullHttpResponse.class);
         verify(context).writeAndFlush(captor.capture());
         FullHttpResponse response = captor.getValue();
-        assertThat(response.status().code(), equalTo(404));
+        assertThat(response.getStatus().code(), equalTo(404));
     }
 
     @Test
@@ -58,15 +57,15 @@ public class HttpProcessHandlerTest {
         ChannelFuture future = mock(ChannelFuture.class);
         when(context.writeAndFlush(any(FullHttpResponse.class))).thenReturn(future);
         HttpRequest message = Mockito.mock(HttpRequest.class);
-        when(message.uri()).thenReturn("localhost:80/greeting");
-        when(message.method()).thenReturn(HttpMethod.GET);
+        when(message.getUri()).thenReturn("localhost:80/greeting");
+        when(message.getMethod()).thenReturn(HttpMethod.GET);
         HttpProcessHandler handler = new HttpProcessHandler(FrameworkModel.defaultModel());
         handler.channelRead0(context, message);
         verify(future).addListener(ChannelFutureListener.CLOSE);
         ArgumentCaptor<FullHttpResponse> captor = ArgumentCaptor.forClass(FullHttpResponse.class);
         verify(context).writeAndFlush(captor.capture());
         FullHttpResponse response = captor.getValue();
-        assertThat(response.status().code(), equalTo(200));
+        assertThat(response.getStatus().code(), equalTo(200));
     }
 
     @Test
@@ -75,14 +74,14 @@ public class HttpProcessHandlerTest {
         ChannelFuture future = mock(ChannelFuture.class);
         when(context.writeAndFlush(any(FullHttpResponse.class))).thenReturn(future);
         HttpRequest message = Mockito.mock(HttpRequest.class);
-        when(message.uri()).thenReturn("localhost:80/test");
-        when(message.method()).thenReturn(HttpMethod.GET);
+        when(message.getUri()).thenReturn("localhost:80/test");
+        when(message.getMethod()).thenReturn(HttpMethod.GET);
         HttpProcessHandler handler = new HttpProcessHandler(FrameworkModel.defaultModel());
         handler.channelRead0(context, message);
         verify(future).addListener(ChannelFutureListener.CLOSE);
         ArgumentCaptor<FullHttpResponse> captor = ArgumentCaptor.forClass(FullHttpResponse.class);
         verify(context).writeAndFlush(captor.capture());
         FullHttpResponse response = captor.getValue();
-        assertThat(response.status().code(), equalTo(404));
+        assertThat(response.getStatus().code(), equalTo(404));
     }
 }

@@ -27,23 +27,28 @@ import static org.apache.dubbo.common.constants.CommonConstants.DEFAULT_VERSION;
 public class BaseServiceMetadata {
     public static final char COLON_SEPARATOR = ':';
 
+    // service key，代表了我们的服务的关键名称
     protected String serviceKey;
+    // 服务的接口名称，也是我们的服务非常重要的一个信息
     protected String serviceInterfaceName;
+    // 服务版本号
     protected String version;
+    // 服务是可以分组的，我们后面会陆续讲解dubbo的各种高阶特性，服务是可以分成一组一组的
     protected volatile String group;
+    // model
     private ServiceModel serviceModel;
 
     public static String buildServiceKey(String path, String group, String version) {
         int length = path == null ? 0 : path.length();
         length += group == null ? 0 : group.length();
         length += version == null ? 0 : version.length();
-        length += 2;
+        length += 3;
         StringBuilder buf = new StringBuilder(length);
-        if (StringUtils.isNotEmpty(group)) {
+        if (group != null && group.length() > 0) {
             buf.append(group).append('/');
         }
         buf.append(path);
-        if (StringUtils.isNotEmpty(version)) {
+        if (version != null && version.length() > 0) {
             buf.append(':').append(version);
         }
         return buf.toString().intern();
@@ -106,7 +111,7 @@ public class BaseServiceMetadata {
 
     public static String keyWithoutGroup(String interfaceName, String version) {
         if (StringUtils.isEmpty(version)) {
-            return interfaceName + ":" + DEFAULT_VERSION;
+            return interfaceName + ":0.0.0";
         }
         return interfaceName + ":" + version;
     }

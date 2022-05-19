@@ -17,7 +17,6 @@
 package org.apache.dubbo.registry.client.migration;
 
 import org.apache.dubbo.common.URL;
-import org.apache.dubbo.common.status.reporter.FrameworkStatusReportService;
 import org.apache.dubbo.config.ApplicationConfig;
 import org.apache.dubbo.registry.client.migration.model.MigrationRule;
 import org.apache.dubbo.registry.client.migration.model.MigrationStep;
@@ -28,7 +27,6 @@ import org.apache.dubbo.rpc.Invoker;
 import org.apache.dubbo.rpc.cluster.ClusterInvoker;
 import org.apache.dubbo.rpc.model.ApplicationModel;
 import org.apache.dubbo.rpc.model.FrameworkModel;
-
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,7 +44,6 @@ public class MigrationInvokerTest {
         ApplicationConfig applicationConfig = new ApplicationConfig();
         applicationConfig.setName("Test");
         ApplicationModel.defaultModel().getApplicationConfigManager().setApplication(applicationConfig);
-        ApplicationModel.defaultModel().getBeanFactory().registerBean(FrameworkStatusReportService.class);
     }
 
     @AfterEach
@@ -66,9 +63,6 @@ public class MigrationInvokerTest {
 
         Mockito.when(invoker.getDirectory()).thenReturn(directory);
         Mockito.when(serviceDiscoveryInvoker.getDirectory()).thenReturn(serviceDiscoveryDirectory);
-
-        Mockito.when(invoker.isAvailable()).thenReturn(true);
-        Mockito.when(serviceDiscoveryInvoker.isAvailable()).thenReturn(true);
 
         Mockito.when(invoker.hasProxyInvokers()).thenReturn(true);
         Mockito.when(serviceDiscoveryInvoker.hasProxyInvokers()).thenReturn(true);
@@ -91,7 +85,6 @@ public class MigrationInvokerTest {
         Mockito.when(consumerURL.getVersion()).thenReturn("0.0.0");
         Mockito.when(consumerURL.getServiceKey()).thenReturn("Group/Test:0.0.0");
         Mockito.when(consumerURL.getDisplayServiceKey()).thenReturn("Test:0.0.0");
-        Mockito.when(consumerURL.getOrDefaultApplicationModel()).thenReturn(ApplicationModel.defaultModel());
 
         Mockito.when(invoker.getUrl()).thenReturn(consumerURL);
         Mockito.when(serviceDiscoveryInvoker.getUrl()).thenReturn(consumerURL);
@@ -223,66 +216,6 @@ public class MigrationInvokerTest {
         long currentTimeMillis = System.currentTimeMillis();
         migrationInvoker.migrateToForceApplicationInvoker(migrationRule);
         Assertions.assertTrue(System.currentTimeMillis() - currentTimeMillis >= 2000);
-    }
-
-    @Test
-    public void testDecide() {
-        RegistryProtocol registryProtocol = Mockito.mock(RegistryProtocol.class);
-
-        ClusterInvoker invoker = Mockito.mock(ClusterInvoker.class);
-        ClusterInvoker serviceDiscoveryInvoker = Mockito.mock(ClusterInvoker.class);
-
-        DynamicDirectory directory = Mockito.mock(DynamicDirectory.class);
-        DynamicDirectory serviceDiscoveryDirectory = Mockito.mock(DynamicDirectory.class);
-
-        Mockito.when(invoker.getDirectory()).thenReturn(directory);
-        Mockito.when(serviceDiscoveryInvoker.getDirectory()).thenReturn(serviceDiscoveryDirectory);
-
-        Mockito.when(invoker.isAvailable()).thenReturn(true);
-        Mockito.when(serviceDiscoveryInvoker.isAvailable()).thenReturn(true);
-
-        Mockito.when(invoker.hasProxyInvokers()).thenReturn(true);
-        Mockito.when(serviceDiscoveryInvoker.hasProxyInvokers()).thenReturn(true);
-
-        List<Invoker> invokers = new LinkedList<>();
-        invokers.add(Mockito.mock(Invoker.class));
-        invokers.add(Mockito.mock(Invoker.class));
-        List<Invoker> serviceDiscoveryInvokers = new LinkedList<>();
-        serviceDiscoveryInvokers.add(Mockito.mock(Invoker.class));
-        serviceDiscoveryInvokers.add(Mockito.mock(Invoker.class));
-        Mockito.when(directory.getAllInvokers()).thenReturn(invokers);
-        Mockito.when(serviceDiscoveryDirectory.getAllInvokers()).thenReturn(serviceDiscoveryInvokers);
-
-        Mockito.when(registryProtocol.getInvoker(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any())).thenReturn(invoker);
-        Mockito.when(registryProtocol.getServiceDiscoveryInvoker(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any())).thenReturn(serviceDiscoveryInvoker);
-
-        URL consumerURL = Mockito.mock(URL.class);
-        Mockito.when(consumerURL.getServiceInterface()).thenReturn("Test");
-        Mockito.when(consumerURL.getGroup()).thenReturn("Group");
-        Mockito.when(consumerURL.getVersion()).thenReturn("0.0.0");
-        Mockito.when(consumerURL.getServiceKey()).thenReturn("Group/Test:0.0.0");
-        Mockito.when(consumerURL.getDisplayServiceKey()).thenReturn("Test:0.0.0");
-        Mockito.when(consumerURL.getOrDefaultApplicationModel()).thenReturn(ApplicationModel.defaultModel());
-
-        Mockito.when(invoker.getUrl()).thenReturn(consumerURL);
-        Mockito.when(serviceDiscoveryInvoker.getUrl()).thenReturn(consumerURL);
-
-        MigrationInvoker migrationInvoker = new MigrationInvoker(registryProtocol, null, null, DemoService.class, null, consumerURL);
-
-        MigrationRule migrationRule = Mockito.mock(MigrationRule.class);
-        Mockito.when(migrationRule.getForce(Mockito.any())).thenReturn(true);
-        migrationInvoker.migrateToApplicationFirstInvoker(migrationRule);
-        migrationInvoker.setMigrationStep(MigrationStep.APPLICATION_FIRST);
-        migrationInvoker.invoke(null);
-        Mockito.verify(serviceDiscoveryInvoker, Mockito.times(1)).invoke(null);
-
-        Mockito.when(serviceDiscoveryInvoker.isAvailable()).thenReturn(false);
-        migrationInvoker.invoke(null);
-        Mockito.verify(invoker, Mockito.times(1)).invoke(null);
-
-        Mockito.when(serviceDiscoveryInvoker.isAvailable()).thenReturn(true);
-        migrationInvoker.invoke(null);
-        Mockito.verify(serviceDiscoveryInvoker, Mockito.times(2)).invoke(null);
     }
 
     @Test

@@ -18,7 +18,6 @@ package org.apache.dubbo.config.bootstrap;
 
 import org.apache.dubbo.config.MetadataReportConfig;
 import org.apache.dubbo.config.bootstrap.rest.UserService;
-import org.apache.dubbo.test.check.registrycenter.config.ZookeeperRegistryCenterConfig;
 
 /**
  * Dubbo Provider Bootstrap
@@ -36,8 +35,8 @@ public class DubboServiceConsumerBootstrap {
 //                .registry(builder -> builder.address("eureka://127.0.0.1:8761?registry-type=service&subscribed-services=dubbo-provider-demo"))
 
                 // Zookeeper
-                .registry("zookeeper", builder -> builder.address(ZookeeperRegistryCenterConfig.getConnectionAddress()+"?registry-type=service&subscribed-services=dubbo-provider-demo"))
-                .metadataReport(new MetadataReportConfig(ZookeeperRegistryCenterConfig.getConnectionAddress()))
+                .registry("zookeeper", builder -> builder.address("zookeeper://127.0.0.1:2181?registry-type=service&subscribed-services=dubbo-provider-demo"))
+                .metadataReport(new MetadataReportConfig("zookeeper://127.0.0.1:2181"))
 
                 // Nacos
                 // .registry("nacos", builder -> builder.address("nacos://127.0.0.1:8848?registry.type=service&subscribed.services=dubbo-provider-demo"))

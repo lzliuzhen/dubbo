@@ -31,10 +31,10 @@ public class ListBoolMatch {
         this.oneof = oneof;
     }
 
-    public boolean isMatch(boolean input) {
+    public static boolean isMatch(ListBoolMatch listBoolMatch, boolean input) {
 
-        for (BoolMatch boolMatch : oneof) {
-            if (boolMatch.isMatch(input)) {
+        for (BoolMatch boolMatch : listBoolMatch.getOneof()) {
+            if (BoolMatch.isMatch(boolMatch, input)) {
                 return true;
             }
         }

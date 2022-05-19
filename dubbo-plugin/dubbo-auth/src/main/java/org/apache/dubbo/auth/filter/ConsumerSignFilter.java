@@ -44,8 +44,11 @@ public class ConsumerSignFilter implements Filter {
     @Override
     public Result invoke(Invoker<?> invoker, Invocation invocation) throws RpcException {
         URL url = invoker.getUrl();
+        // 权限认证这一块，默认是false，不需要进行权限认证，如果开启了以后就会启用权限
         boolean shouldAuth = url.getParameter(Constants.SERVICE_AUTH, false);
         if (shouldAuth) {
+            // SPI机制，拿到一个实现类，然后再对你的rpc调用做一个鉴权
+            // 判断一下你是否有权限去发起一个访问
             Authenticator authenticator = applicationModel.getExtensionLoader(Authenticator.class)
                     .getExtension(url.getParameter(Constants.AUTHENTICATOR, Constants.DEFAULT_AUTHENTICATOR));
             authenticator.sign(invocation, url);

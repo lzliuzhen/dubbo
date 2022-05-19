@@ -18,7 +18,6 @@
 package org.apache.dubbo.registry;
 
 import org.apache.dubbo.common.URL;
-
 import org.mockito.Mockito;
 
 public class SimpleRegistryFactory implements RegistryFactory {

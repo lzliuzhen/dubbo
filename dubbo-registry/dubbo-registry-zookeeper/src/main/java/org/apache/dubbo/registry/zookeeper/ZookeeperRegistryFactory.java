@@ -28,7 +28,10 @@ import org.apache.dubbo.rpc.model.ApplicationModel;
  */
 public class ZookeeperRegistryFactory extends AbstractRegistryFactory {
 
+    // 跟zk之间的网络通信的组件
     private ZookeeperTransporter zookeeperTransporter;
+
+    private ApplicationModel applicationModel;
 
     // for compatible usage
     public ZookeeperRegistryFactory() {
@@ -37,6 +40,7 @@ public class ZookeeperRegistryFactory extends AbstractRegistryFactory {
 
     public ZookeeperRegistryFactory(ApplicationModel applicationModel) {
         this.applicationModel = applicationModel;
+        // 通过SPI机制来进行获取
         this.zookeeperTransporter = ZookeeperTransporter.getExtension(applicationModel);
     }
 
@@ -47,6 +51,8 @@ public class ZookeeperRegistryFactory extends AbstractRegistryFactory {
 
     @Override
     public Registry createRegistry(URL url) {
+        // 无非就是创建一个ZooKeeperRegistry，注册中心组件
+        // 基于zk的注册中心组件，值得我们接下来下一讲好好的来分析一下
         return new ZookeeperRegistry(url, zookeeperTransporter);
     }
 

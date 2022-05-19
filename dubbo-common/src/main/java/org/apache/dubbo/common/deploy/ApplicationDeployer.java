@@ -18,7 +18,6 @@ package org.apache.dubbo.common.deploy;
 
 import org.apache.dubbo.common.config.ReferenceCache;
 import org.apache.dubbo.rpc.model.ApplicationModel;
-import org.apache.dubbo.rpc.model.ModuleModel;
 
 import java.util.concurrent.Future;
 
@@ -43,17 +42,10 @@ public interface ApplicationDeployer extends Deployer<ApplicationModel> {
      */
     void stop() throws IllegalStateException;
 
-    Future getStartFuture();
-
     /**
      * Register application instance and start internal services
      */
     void prepareApplicationInstance();
-
-    /**
-     * Register application instance and start internal services
-     */
-    void prepareInternalModule();
 
     /**
      * Pre-processing before destroy model
@@ -79,13 +71,8 @@ public interface ApplicationDeployer extends Deployer<ApplicationModel> {
      */
     boolean isBackground();
 
-    /**
-     * check all module state and update application state
-     */
-    void checkState(ModuleModel moduleModel, DeployState moduleState);
+    void checkStarting();
 
-    /**
-     * module state changed callbacks
-     */
-    void notifyModuleChanged(ModuleModel moduleModel, DeployState state);
+    void checkStarted();
+
 }

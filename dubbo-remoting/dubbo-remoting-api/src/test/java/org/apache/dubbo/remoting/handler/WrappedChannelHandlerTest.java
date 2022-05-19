@@ -27,7 +27,6 @@ import org.apache.dubbo.remoting.exchange.Request;
 import org.apache.dubbo.remoting.exchange.Response;
 import org.apache.dubbo.remoting.exchange.support.DefaultFuture;
 import org.apache.dubbo.remoting.transport.dispatcher.WrappedChannelHandler;
-import org.apache.dubbo.rpc.model.ApplicationModel;
 
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,7 +43,6 @@ public class WrappedChannelHandlerTest {
 
     @BeforeEach
     public void setUp() throws Exception {
-        url = url.setScopeModel(ApplicationModel.defaultModel());
         handler = new WrappedChannelHandler(new BizChannelHandler(true), url);
     }
 
@@ -133,7 +131,7 @@ public class WrappedChannelHandlerTest {
         Assertions.assertEquals(preferredExecutorService, sharedExecutor);
         future.cancel();
 
-        ThreadlessExecutor executor = new ThreadlessExecutor();
+        ThreadlessExecutor executor = new ThreadlessExecutor(sharedExecutor);
         future = DefaultFuture.newFuture(channel, request, 1000, executor);
         preferredExecutorService = handler.getPreferredExecutorService(response);
         Assertions.assertEquals(preferredExecutorService, executor);

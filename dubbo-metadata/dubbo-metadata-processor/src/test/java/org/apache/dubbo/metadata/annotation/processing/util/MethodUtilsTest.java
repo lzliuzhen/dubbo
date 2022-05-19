@@ -67,8 +67,7 @@ public class MethodUtilsTest extends AbstractAnnotationProcessingTest {
         assertEquals(12, methods.size());
 
         methods = getAllDeclaredMethods(type);
-        // registerNatives() no provided in JDK 17
-        assertTrue(methods.size() >= 33);
+        assertEquals(34, methods.size());
 
         assertTrue(getAllDeclaredMethods((TypeElement) null).isEmpty());
         assertTrue(getAllDeclaredMethods((TypeMirror) null).isEmpty());

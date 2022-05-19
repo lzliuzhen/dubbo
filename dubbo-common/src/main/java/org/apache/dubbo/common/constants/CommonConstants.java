@@ -41,8 +41,6 @@ public interface CommonConstants {
 
     String METADATA_SERVICE_PORT_KEY = "metadata-service-port";
 
-    String METADATA_SERVICE_PROTOCOL_KEY = "metadata-service-protocol";
-
     String LIVENESS_PROBE_KEY = "liveness-probe";
 
     String READINESS_PROBE_KEY = "readiness-probe";
@@ -116,7 +114,7 @@ public interface CommonConstants {
 
     String CORE_THREADS_KEY = "corethreads";
 
-    String THREADS_KEY = "threads";
+    String THREADS_KEY = "threads"; // dubbo里有另外一个核心的参数，就是threads这个参数，默认是200，你可以修改他的数量，500，800，1000，cpu核
 
     String QUEUES_KEY = "queues";
 
@@ -126,7 +124,7 @@ public interface CommonConstants {
 
     String DEFAULT_CLIENT_THREADPOOL = "cached";
 
-    String IO_THREADS_KEY = "iothreads";
+    String IO_THREADS_KEY = "iothreads"; // ioThreads是dubbo里的关键可配置参数之一，决定了你的netty server的io线程有多少
 
     String KEEP_ALIVE_KEY = "keep.alive";
 
@@ -137,8 +135,6 @@ public interface CommonConstants {
     String TIMEOUT_KEY = "timeout";
 
     int DEFAULT_TIMEOUT = 1000;
-
-    String SESSION_KEY = "session";
 
     // used by invocation attachments to transfer timeout from Consumer to Provider.
     // works as a replacement of TIMEOUT_KEY on wire, which seems to be totally useless in previous releases).
@@ -217,9 +213,9 @@ public interface CommonConstants {
 
     String METADATA_KEY = "metadata-type";
 
-    String REPORT_METADATA_KEY = "report-metadata";
+    String CONFIG_MAPPING_TYPE = "config";
 
-    String REPORT_DEFINITION_KEY = "report-definition";
+    String METADATA_MAPPING_TYPE = "metadata";
 
     String DEFAULT_METADATA_STORAGE_TYPE = "local";
 
@@ -378,6 +374,8 @@ public interface CommonConstants {
 
     int DEFAULT_FAILBACK_TIMES = 3;
 
+    String REGISTER_KEY = "register";
+
     String INTERFACES = "interfaces";
 
     String SSL_ENABLED_KEY = "ssl-enabled";
@@ -434,8 +432,6 @@ public interface CommonConstants {
 
     String DEFAULT_VERSION = "0.0.0";
 
-    String ROUTER_KEY = "router";
-
     String EXPORT_ASYNC_KEY = "export-async";
 
     String REFER_ASYNC_KEY = "refer-async";
@@ -488,53 +484,4 @@ public interface CommonConstants {
 
     String OS_WIN_PREFIX = "win";
 
-    String RECONNECT_TASK_TRY_COUNT = "dubbo.reconnect.reconnectTaskTryCount";
-
-    int DEFAULT_RECONNECT_TASK_TRY_COUNT = 10;
-
-    String RECONNECT_TASK_PERIOD = "dubbo.reconnect.reconnectTaskPeriod";
-
-    int DEFAULT_RECONNECT_TASK_PERIOD = 1000;
-
-    String RESELECT_COUNT = "dubbo.reselect.count";
-
-    int DEFAULT_RESELECT_COUNT = 10;
-
-    String ENABLE_CONNECTIVITY_VALIDATION = "dubbo.connectivity.validation";
-
-    String DUBBO_INTERNAL_APPLICATION = "DUBBO_INTERNAL_APPLICATION";
-
-    String RETRY_TIMES_KEY = "retry-times";
-
-    String RETRY_PERIOD_KEY = "retry-period";
-
-    String SYNC_REPORT_KEY = "sync-report";
-
-    String CYCLE_REPORT_KEY = "cycle-report";
-
-    String WORKING_CLASSLOADER_KEY = "WORKING_CLASSLOADER";
-
-    String STAGED_CLASSLOADER_KEY = "STAGED_CLASSLOADER";
-
-    String PROVIDER_ASYNC_KEY = "PROVIDER_ASYNC";
-
-    String REGISTER_IP_KEY = "register.ip";
-
-    String CURRENT_CLUSTER_INVOKER_KEY = "currentClusterInvoker";
-
-    String ENABLE_ROUTER_SNAPSHOT_PRINT_KEY = "ENABLE_ROUTER_SNAPSHOT_PRINT";
-
-    String INJVM_COPY_UTIL_KEY = "injvm-copy-util";
-
-    String INJVM_IGNORE_SAME_MODULE_KEY = "injvm.ignore.same-module";
-
-    String SET_FUTURE_IN_SYNC_MODE = "future.sync.set";
-
-    String CLEAR_FUTURE_AFTER_GET = "future.clear.once";
-
-    String NATIVE_STUB = "nativestub";
-
-    String METADATA = "metadata";
-
-    String IGNORE_LISTEN_SHUTDOWN_HOOK = "dubbo.shutdownHook.listenIgnore";
 }

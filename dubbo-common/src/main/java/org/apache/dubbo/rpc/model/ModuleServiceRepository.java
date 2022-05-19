@@ -32,25 +32,28 @@ import java.util.stream.Collectors;
 
 /**
  * Service repository for module
+ *
+ * 服务相关的一些数据，都放在了这个repository仓储组件里
+ *
  */
 public class ModuleServiceRepository {
 
     private final ModuleModel moduleModel;
 
     /**
-     * services
+     * services，代表了很多的服务数据
      */
-    private final ConcurrentMap<String, List<ServiceDescriptor>> services = new ConcurrentHashMap<>();
-
+    private ConcurrentMap<String, List<ServiceDescriptor>> services = new ConcurrentHashMap<>();
     /**
      * consumers ( key - group/interface:version value - consumerModel list)
+     * 代表了服务的很多调用方（consumer就代表了消费方，调用方）
      */
-    private final ConcurrentMap<String, List<ConsumerModel>> consumers = new ConcurrentHashMap<>();
-
+    private ConcurrentMap<String, List<ConsumerModel>> consumers = new ConcurrentHashMap<>();
     /**
-     * providers
+     * providers（很多的服务提供方）
      */
     private final ConcurrentMap<String, ProviderModel> providers = new ConcurrentHashMap<>();
+    // framework service repository，存储的也都是一些服务相关的数据
     private final FrameworkServiceRepository frameworkServiceRepository;
 
     public ModuleServiceRepository(ModuleModel moduleModel) {
@@ -99,18 +102,36 @@ public class ModuleServiceRepository {
         frameworkServiceRepository.registerProvider(providerModel);
     }
 
-    public ServiceDescriptor registerService(ServiceDescriptor serviceDescriptor) {
-        return registerService(serviceDescriptor.getServiceInterfaceClass(),serviceDescriptor);
-    }
-
     public ServiceDescriptor registerService(Class<?> interfaceClazz) {
-        ServiceDescriptor serviceDescriptor = new ReflectionServiceDescriptor(interfaceClazz);
-        return registerService(interfaceClazz,serviceDescriptor);
-    }
-    public ServiceDescriptor registerService(Class<?> interfaceClazz,ServiceDescriptor serviceDescriptor) {
+        // dubbo源码里，有大量的java8的语法糖特性在使用，让这个代码非常的优雅和漂亮
+
+        ServiceDescriptor serviceDescriptor = new ServiceDescriptor(interfaceClazz);
+
+        // map，computeIfAbsent，在dubbo源码里我们之前大量的都看到了
+        // 看看你的key是否存在，如果你的key不存在的话，此时就会新建一个value给你直接放进去
+
+        // 换以前的写法
+        // List<ServiceDescriptor> serviceDescriptors = services.get(interfaceClass.getName());
+        // if(serviceDescriptors == null) {
+        //   synchronized(this) {
+        //     if(serviceDescriptors == null) {
+        //       serviceDescriptors = new CopyOnWriteArrayList<>();
+        //       services.put(interfaceClass.getName(), serviceDescriptors);
+        //     }
+        //   }
+        // }
+
         List<ServiceDescriptor> serviceDescriptors = services.computeIfAbsent(interfaceClazz.getName(),
             k -> new CopyOnWriteArrayList<>());
+
         synchronized (serviceDescriptors) {
+            // java8针对list，有一个stream流式数据处理的过程
+            // list.stream()，把你的list里面的数据想象成是一个数据流了，有一系列的数据在流动，可以流动给你一个一个的来处理
+            // 算子，其实都是大数据技术里面的概念，不谋而合，算子，可以针对你的数据流去做各种事情
+            // filter算子先去执行，对你的list里面的数据会做一个过滤，一条一条的去执行你的过滤逻辑，s是把你的每条数据做一个变量的命名
+            // 针对过滤的结果，在这里面，就会把过滤结果里的first，你过滤后的结果也是一个list集合，第一个数据给找到
+
+            // Optional，你的这个值可能存在，也可能不存在
             Optional<ServiceDescriptor> previous = serviceDescriptors.stream()
                 .filter(s -> s.getServiceInterfaceClass().equals(interfaceClazz)).findFirst();
             if (previous.isPresent()) {
@@ -157,10 +178,8 @@ public class ModuleServiceRepository {
     @Deprecated
     public void reRegisterProvider(String newServiceKey, String serviceKey) {
         ProviderModel providerModel = this.providers.get(serviceKey);
-        frameworkServiceRepository.unregisterProvider(providerModel);
         providerModel.setServiceKey(newServiceKey);
         this.providers.putIfAbsent(newServiceKey, providerModel);
-        frameworkServiceRepository.registerProvider(providerModel);
         this.providers.remove(serviceKey);
     }
 
@@ -193,15 +212,6 @@ public class ModuleServiceRepository {
     public List<ServiceDescriptor> getAllServices() {
         List<ServiceDescriptor> serviceDescriptors = services.values().stream().flatMap(Collection::stream).collect(Collectors.toList());
         return Collections.unmodifiableList(serviceDescriptors);
-    }
-
-    public ServiceDescriptor getService(String serviceName) {
-        // TODO, may need to distinguish service by class loader.
-        List<ServiceDescriptor> serviceDescriptors = services.get(serviceName);
-        if (CollectionUtils.isEmpty(serviceDescriptors)) {
-            return null;
-        }
-        return serviceDescriptors.get(0);
     }
 
     public ServiceDescriptor lookupService(String interfaceName) {

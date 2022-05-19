@@ -61,6 +61,10 @@ public interface RegistryConstants {
 
     String COMPATIBLE_CONFIG_KEY = "compatible_config";
 
+    String REGISTRY_PUBLISH_INTERFACE_KEY = "publish-interface";
+
+    String REGISTRY_PUBLISH_INSTANCE_KEY = "publish-instance";
+
     String REGISTER_MODE_KEY = "register-mode";
 
     String DUBBO_REGISTER_MODE_DEFAULT_KEY = "dubbo.application.register-mode";
@@ -96,7 +100,11 @@ public interface RegistryConstants {
     String SERVICE_REGISTRY_PROTOCOL = "service-discovery-registry";
 
     /**
-     * Specify registry level services consumer needs to subscribe to, multiple values should be separated using ",".
+     * The parameter key of the subscribed service names for Service-Oriented Registry
+     * <p>
+     * If there is a multiple-values, the  "comma" is the separator.
+     *
+     * @since 2.7.5
      */
     String SUBSCRIBED_SERVICE_NAMES_KEY = "subscribed-services";
 
@@ -124,8 +132,4 @@ public interface RegistryConstants {
     String INIT = "INIT";
 
     float DEFAULT_HASHMAP_LOAD_FACTOR = 0.75f;
-
-    String ENABLE_EMPTY_PROTECTION_KEY = "enable-empty-protection";
-    String REGISTER_CONSUMER_URL_KEY = "register-consumer-url";
-
 }

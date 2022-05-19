@@ -21,6 +21,8 @@ import org.apache.dubbo.common.extension.SPI;
 @SPI
 public interface Merger<T> {
 
+    // 提供了一个merge方法，对多个服务分组返回的结果，传入进来
+    // 自己去定义一个merge逻辑，返回一个merge后的结果
     T merge(T... items);
 
 }

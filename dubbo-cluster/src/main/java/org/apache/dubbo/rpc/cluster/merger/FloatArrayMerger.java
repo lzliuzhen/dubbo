@@ -37,8 +37,9 @@ public class FloatArrayMerger implements Merger<float[]> {
         int index = 0;
         for (float[] array : items) {
             if (array != null) {
-                System.arraycopy(array, 0, result, index, array.length);
-                index += array.length;
+                for (float item : array) {
+                    result[index++] = item;
+                }
             }
         }
         return result;

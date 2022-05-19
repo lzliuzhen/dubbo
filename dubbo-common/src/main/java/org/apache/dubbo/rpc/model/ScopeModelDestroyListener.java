@@ -17,9 +17,6 @@
 package org.apache.dubbo.rpc.model;
 
 public interface ScopeModelDestroyListener<T extends ScopeModel> {
+    // destroy事件发生的时候，回调，把你的要被销毁的scopmodel传入进来
     void onDestroy(T scopeModel);
-
-    default boolean isProtocol() {
-        return false;
-    }
 }

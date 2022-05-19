@@ -63,7 +63,28 @@ public class StubProxyFactoryWrapper implements ProxyFactory {
 
     @Override
     public <T> T getProxy(Invoker<T> invoker, boolean generic) throws RpcException {
+        // stub打桩思想，是在网络远程访问里，经常会使用的一些东西
+        // 大家必须要能够掌握
+        // 对于远程网络访问，一般来说，在不同的机器上，要进行远程的网络访问
+        // 机器A -> 机器B
+        // 两台机器之间，是属于必须通过网络来连接和访问
+        // 如果要实现远程RPC访问
+        // 机器A这里，对机器A上面的代码，最好是不要自己写网络通信的代码
+        // 最好是写，比如针对某个接口类型的对象，在机器A上面就是跟本地调用一样，直接调用一个对象的方法
+        // 然后就希望是这个对象的方法里，直接在这个里面写网络通信的代码，去跟目标的机器B进行网络连接，把请求发送过去
+        // 一般来说，就是必须要在机器A上面，针对你要调用的那个接口，动态去生成一个实现了这个接口的类
+        // 动态代理，代理类，或者是stub，打桩，在机器A上打下去的一个伪装成目标类的桩
+        // 直接就是说在这边，可以针对我们打的这个stub桩，就可以去调用我们的stub桩，stub内部去编写网络通信代码，去进行跨机器的访问
+        // 远程网络连接和通信的stub打桩的设计和思想
+
+
+        // 为什么他的名字叫做：stub，打桩
+        // stub这个名字一般都代表了远程网络访问的一个动态代理
+        // 搞了一个stub之后，通过这个stub就可以对远程的机器进行网络访问
+
+        // 使用了抽象代理工厂，去获取真正的动态代理
         T proxy = proxyFactory.getProxy(invoker, generic);
+
         if (GenericService.class != invoker.getInterface()) {
             URL url = invoker.getUrl();
             String stub = url.getParameter(STUB_KEY, url.getParameter(LOCAL_KEY));

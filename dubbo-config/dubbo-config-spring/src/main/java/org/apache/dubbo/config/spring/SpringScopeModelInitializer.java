@@ -16,6 +16,7 @@
  */
 package org.apache.dubbo.config.spring;
 
+import org.apache.dubbo.common.beans.factory.ScopeBeanFactory;
 import org.apache.dubbo.rpc.model.ApplicationModel;
 import org.apache.dubbo.rpc.model.FrameworkModel;
 import org.apache.dubbo.rpc.model.ModuleModel;
@@ -33,7 +34,7 @@ public class SpringScopeModelInitializer implements ScopeModelInitializer {
 
     @Override
     public void initializeApplicationModel(ApplicationModel applicationModel) {
-
+        ScopeBeanFactory beanFactory = applicationModel.getBeanFactory();
     }
 
     @Override

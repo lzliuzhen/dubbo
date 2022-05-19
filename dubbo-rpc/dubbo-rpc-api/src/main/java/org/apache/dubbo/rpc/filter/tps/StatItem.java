@@ -16,8 +16,7 @@
  */
 package org.apache.dubbo.rpc.filter.tps;
 
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 
 /**
  * Judge whether a particular invocation of service provider method should be allowed within a configured time interval.
@@ -25,32 +24,36 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 class StatItem {
 
-    private final String name;
+    private String name;
 
-    private final AtomicLong lastResetTime;
+    private long lastResetTime;
 
-    private final long interval;
+    private long interval;
 
-    private final AtomicInteger token;
+    private LongAdder token;
 
-    private final int rate;
+    private int rate;
 
     StatItem(String name, int rate, long interval) {
         this.name = name;
         this.rate = rate;
         this.interval = interval;
-        this.lastResetTime = new AtomicLong(System.currentTimeMillis());
-        this.token = new AtomicInteger(rate);
+        this.lastResetTime = System.currentTimeMillis();
+        this.token = buildLongAdder(rate);
     }
 
     public boolean isAllowable() {
         long now = System.currentTimeMillis();
-        if (now > lastResetTime.get() + interval) {
-            token.set(rate);
-            lastResetTime.set(now);
+        if (now > lastResetTime + interval) {
+            token = buildLongAdder(rate);
+            lastResetTime = now;
         }
 
-        return token.decrementAndGet() >= 0;
+        if (token.sum() <= 0) {
+            return false;
+        }
+        token.decrement();
+        return true;
     }
 
     public long getInterval() {
@@ -64,19 +67,26 @@ class StatItem {
 
 
     long getLastResetTime() {
-        return lastResetTime.get();
+        return lastResetTime;
     }
 
-    int getToken() {
-        return token.get();
+    long getToken() {
+        return token.sum();
     }
 
     @Override
     public String toString() {
-        return "StatItem " +
-            "[name=" + name + ", " +
-            "rate = " + rate + ", " +
-            "interval = " + interval + ']';
+        return new StringBuilder(32).append("StatItem ")
+                .append("[name=").append(name).append(", ")
+                .append("rate = ").append(rate).append(", ")
+                .append("interval = ").append(interval).append(']')
+                .toString();
+    }
+
+    private LongAdder buildLongAdder(int rate) {
+        LongAdder adder = new LongAdder();
+        adder.add(rate);
+        return adder;
     }
 
 }

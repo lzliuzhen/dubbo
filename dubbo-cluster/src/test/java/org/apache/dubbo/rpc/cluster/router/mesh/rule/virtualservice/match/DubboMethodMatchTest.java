@@ -18,8 +18,6 @@
 package org.apache.dubbo.rpc.cluster.router.mesh.rule.virtualservice.match;
 
 
-import org.apache.dubbo.rpc.RpcInvocation;
-
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -39,7 +37,7 @@ public class DubboMethodMatchTest {
 
         dubboMethodMatch.setName_match(nameStringMatch);
 
-        assertTrue(dubboMethodMatch.isMatch(new RpcInvocation(null, "sayHello", "",  "", new Class[]{}, new Object[]{})));
+        assertTrue(DubboMethodMatch.isMatch(dubboMethodMatch, "sayHello", new String[]{}, new Object[]{}));
     }
 
 
@@ -48,8 +46,10 @@ public class DubboMethodMatchTest {
         DubboMethodMatch dubboMethodMatch = new DubboMethodMatch();
         dubboMethodMatch.setArgc(1);
 
-        assertFalse(dubboMethodMatch.isMatch(new RpcInvocation(null, "sayHello", "",  "", new Class[]{}, new Object[]{})));
-        assertTrue(dubboMethodMatch.isMatch(new RpcInvocation(null, "sayHello", "",  "", new Class[]{}, new Object[]{"1"})));
+        assertFalse(DubboMethodMatch.isMatch(dubboMethodMatch, "sayHello", new String[]{}, new Object[]{}));
+        assertFalse(DubboMethodMatch.isMatch(dubboMethodMatch, "sayHello", new String[]{}, null));
+
+        assertTrue(DubboMethodMatch.isMatch(dubboMethodMatch, "sayHello", new String[]{}, new Object[]{"1"}));
     }
 
     @Test
@@ -70,13 +70,15 @@ public class DubboMethodMatchTest {
         dubboMethodMatch.setArgp(argpMatch);
 
 
-        assertTrue(dubboMethodMatch.isMatch(new RpcInvocation(null, "sayHello", "",  "", new Class[]{Long.class, String.class}, new Object[]{})));
-        assertFalse(dubboMethodMatch.isMatch(new RpcInvocation(null, "sayHello", "",  "", new Class[]{Long.class, String.class, String.class}, new Object[]{})));
-        assertFalse(dubboMethodMatch.isMatch(new RpcInvocation(null, "sayHello", "",  "", new Class[]{}, new Object[]{})));
+        assertTrue(DubboMethodMatch.isMatch(dubboMethodMatch, "sayHello", new String[]{"java.lang.Long", "java.lang.String"}, new Object[]{}));
+        assertFalse(DubboMethodMatch.isMatch(dubboMethodMatch, "sayHello", new String[]{"java.lang.Long", "java.lang.String", "java.lang.String"}, new Object[]{}));
+        assertFalse(DubboMethodMatch.isMatch(dubboMethodMatch, "sayHello", new String[]{}, new Object[]{}));
+        assertFalse(DubboMethodMatch.isMatch(dubboMethodMatch, "sayHello", null, new Object[]{}));
     }
 
     @Test
     public void parametersMatch() {
+
 
         DubboMethodMatch dubboMethodMatch = new DubboMethodMatch();
 
@@ -127,8 +129,8 @@ public class DubboMethodMatchTest {
 
         dubboMethodMatch.setArgs(parametersMatch);
 
-        assertTrue(dubboMethodMatch.isMatch(new RpcInvocation(null, "test", "",  "", new Class[]{int.class, String.class}, new Object[]{10, "sayHello"})));
-        assertFalse(dubboMethodMatch.isMatch(new RpcInvocation(null, "test", "",  "", new Class[]{int.class, String.class}, new Object[]{10, "sayHi"})));
+        assertTrue(DubboMethodMatch.isMatch(dubboMethodMatch, "test", new String[]{"int", "java.lang.String"}, new Object[]{10, "sayHello"}));
+        assertFalse(DubboMethodMatch.isMatch(dubboMethodMatch, "test", new String[]{"int", "java.lang.String"}, new Object[]{10, "sayHi"}));
 
 
         //-----index 2
@@ -148,7 +150,7 @@ public class DubboMethodMatchTest {
         }
 
 
-        assertTrue(dubboMethodMatch.isMatch(new RpcInvocation(null, "test", "",  "", new Class[]{int.class, String.class, boolean.class}, new Object[]{10, "sayHello", true})));
-        assertFalse(dubboMethodMatch.isMatch(new RpcInvocation(null, "test", "",  "", new Class[]{int.class, String.class, boolean.class}, new Object[]{10, "sayHello", false})));
+        assertTrue(DubboMethodMatch.isMatch(dubboMethodMatch, "test", new String[]{"int", "java.lang.String", "boolean"}, new Object[]{10, "sayHello", true}));
+        assertFalse(DubboMethodMatch.isMatch(dubboMethodMatch, "test", new String[]{"int", "java.lang.String", "boolean"}, new Object[]{10, "sayHello", false}));
     }
 }

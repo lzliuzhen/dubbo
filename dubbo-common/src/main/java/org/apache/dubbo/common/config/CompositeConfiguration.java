@@ -18,22 +18,21 @@ package org.apache.dubbo.common.config;
 
 import org.apache.dubbo.common.logger.Logger;
 import org.apache.dubbo.common.logger.LoggerFactory;
-import org.apache.dubbo.common.utils.ArrayUtils;
 
 import java.util.Arrays;
+import java.util.LinkedList;
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * This is an abstraction specially customized for the sequence Dubbo retrieves properties.
  */
 public class CompositeConfiguration implements Configuration {
-    private final Logger logger = LoggerFactory.getLogger(CompositeConfiguration.class);
+    private Logger logger = LoggerFactory.getLogger(CompositeConfiguration.class);
 
     /**
      * List holding all the configuration
      */
-    private final List<Configuration> configList = new CopyOnWriteArrayList<>();
+    private List<Configuration> configList = new LinkedList<Configuration>();
 
     //FIXME, consider change configList to SortedMap to replace this boolean status.
     private boolean dynamicIncluded;
@@ -42,18 +41,19 @@ public class CompositeConfiguration implements Configuration {
     }
 
     public CompositeConfiguration(Configuration... configurations) {
-        if (ArrayUtils.isNotEmpty(configurations)) {
+        this();
+        if (configurations != null && configurations.length > 0) {
             Arrays.stream(configurations).filter(config -> !configList.contains(config)).forEach(configList::add);
         }
     }
 
-    //FIXME, consider changing configList to SortedMap to replace this boolean status.
-    public boolean isDynamicIncluded() {
-        return dynamicIncluded;
-    }
-
     public void setDynamicIncluded(boolean dynamicIncluded) {
         this.dynamicIncluded = dynamicIncluded;
+    }
+
+    //FIXME, consider change configList to SortedMap to replace this boolean status.
+    public boolean isDynamicIncluded() {
+        return dynamicIncluded;
     }
 
     public void addConfiguration(Configuration configuration) {
@@ -80,8 +80,7 @@ public class CompositeConfiguration implements Configuration {
                     return value;
                 }
             } catch (Exception e) {
-                logger.error("Error when trying to get value for key " + key + " from " + config + ", " +
-                    "will continue to try the next one.");
+                logger.error("Error when trying to get value for key " + key + " from " + config + ", will continue to try the next one.");
             }
         }
         return null;

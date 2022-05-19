@@ -16,8 +16,6 @@
  */
 package org.apache.dubbo.common.convert.multiple;
 
-import org.apache.dubbo.rpc.model.FrameworkModel;
-
 import java.util.SortedSet;
 import java.util.TreeSet;
 
@@ -27,9 +25,6 @@ import java.util.TreeSet;
  * @since 2.7.6
  */
 public class StringToSortedSetConverter extends StringToIterableConverter<SortedSet> {
-    public StringToSortedSetConverter(FrameworkModel frameworkModel) {
-        super(frameworkModel);
-    }
 
     @Override
     protected SortedSet createMultiValue(int size, Class<?> multiValueType) {

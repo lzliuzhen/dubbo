@@ -31,9 +31,12 @@ import java.util.Map;
 public class ServiceCheckUtils {
 
     public static boolean isRegistered(ProviderModel providerModel) {
-        // check all registries status
-        for (ProviderModel.RegisterStatedURL registerStatedURL : providerModel.getStatedUrl()) {
-            if (registerStatedURL.isRegistered()) {
+        // TODO, only check the status of one registry and no protocol now.
+        RegistryManager registryManager = providerModel.getModuleModel().getApplicationModel().getBeanFactory().getBean(RegistryManager.class);
+        Collection<Registry> registries = registryManager.getRegistries();
+        if (CollectionUtils.isNotEmpty(registries)) {
+            AbstractRegistry abstractRegistry = (AbstractRegistry) registries.iterator().next();
+            if (abstractRegistry.getRegistered().stream().anyMatch(url -> url.getServiceKey().equals(providerModel.getServiceKey()))) {
                 return true;
             }
         }
@@ -47,16 +50,11 @@ public class ServiceCheckUtils {
 
         Collection<Registry> registries = registryManager.getRegistries();
         if (CollectionUtils.isNotEmpty(registries)) {
-            for (Registry registry : registries) {
-                if (!(registry instanceof AbstractRegistry)) {
-                    continue;
-                }
-                AbstractRegistry abstractRegistry = (AbstractRegistry) registry;
-                for (Map.Entry<URL, Map<String, List<URL>>> entry : abstractRegistry.getNotified().entrySet()) {
-                    if (entry.getKey().getServiceKey().equals(consumerModel.getServiceKey())) {
-                        if (CollectionUtils.isNotEmptyMap(entry.getValue())) {
-                            num = entry.getValue().size();
-                        }
+            AbstractRegistry abstractRegistry = (AbstractRegistry) registries.iterator().next();
+            for (Map.Entry<URL, Map<String, List<URL>>> entry : abstractRegistry.getNotified().entrySet()) {
+                if (entry.getKey().getServiceKey().equals(consumerModel.getServiceKey())) {
+                    if (CollectionUtils.isNotEmptyMap(entry.getValue())) {
+                        num = entry.getValue().size();
                     }
                 }
             }

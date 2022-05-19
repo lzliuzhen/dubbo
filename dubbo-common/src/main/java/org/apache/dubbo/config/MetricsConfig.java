@@ -22,7 +22,6 @@ import org.apache.dubbo.common.utils.UrlUtils;
 import org.apache.dubbo.config.nested.AggregationConfig;
 import org.apache.dubbo.config.nested.PrometheusConfig;
 import org.apache.dubbo.config.support.Nested;
-import org.apache.dubbo.rpc.model.ApplicationModel;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -59,10 +58,7 @@ public class MetricsConfig extends AbstractConfig {
     private AggregationConfig aggregation;
 
     public MetricsConfig() {
-    }
-
-    public MetricsConfig(ApplicationModel applicationModel) {
-        super(applicationModel);
+        super();
     }
 
     public URL toUrl() {

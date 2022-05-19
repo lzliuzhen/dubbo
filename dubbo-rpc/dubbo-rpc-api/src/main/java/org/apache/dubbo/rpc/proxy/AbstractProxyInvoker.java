@@ -19,9 +19,6 @@ package org.apache.dubbo.rpc.proxy;
 import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.logger.Logger;
 import org.apache.dubbo.common.logger.LoggerFactory;
-import org.apache.dubbo.common.profiler.Profiler;
-import org.apache.dubbo.common.profiler.ProfilerEntry;
-import org.apache.dubbo.common.profiler.ProfilerSwitch;
 import org.apache.dubbo.rpc.AppResponse;
 import org.apache.dubbo.rpc.AsyncContextImpl;
 import org.apache.dubbo.rpc.AsyncRpcResult;
@@ -34,8 +31,6 @@ import org.apache.dubbo.rpc.RpcException;
 import java.lang.reflect.InvocationTargetException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
-
-import static org.apache.dubbo.common.constants.CommonConstants.PROVIDER_ASYNC_KEY;
 
 /**
  * This Invoker works on provider side, delegates RPC to interface implementation.
@@ -86,31 +81,10 @@ public abstract class AbstractProxyInvoker<T> implements Invoker<T> {
     @Override
     public Result invoke(Invocation invocation) throws RpcException {
         try {
-            ProfilerEntry originEntry = null;
-            if (ProfilerSwitch.isEnableSimpleProfiler()) {
-                Object fromInvocation = invocation.get(Profiler.PROFILER_KEY);
-                if (fromInvocation instanceof ProfilerEntry) {
-                    ProfilerEntry profiler = Profiler.enter((ProfilerEntry) fromInvocation, "Receive request. Server biz impl invoke begin.");
-                    invocation.put(Profiler.PROFILER_KEY, profiler);
-                    originEntry = Profiler.setToBizProfiler(profiler);
-                }
-            }
-
+            // 还没看到具体的代码，但是doInvoke之后，必然会把你封装的这个实现类，反射去调用你的实现类的方法
+            // sayHello，value就是sayHello方法的一个值
             Object value = doInvoke(proxy, invocation.getMethodName(), invocation.getParameterTypes(), invocation.getArguments());
-
-            if (ProfilerSwitch.isEnableSimpleProfiler()) {
-                Object fromInvocation = invocation.get(Profiler.PROFILER_KEY);
-                if (fromInvocation instanceof ProfilerEntry) {
-                    ProfilerEntry profiler = Profiler.release((ProfilerEntry) fromInvocation);
-                    invocation.put(Profiler.PROFILER_KEY, profiler);
-                }
-            }
-            Profiler.removeBizProfiler();
-            if (originEntry != null) {
-                Profiler.setToBizProfiler(originEntry);
-            }
-
-            CompletableFuture<Object> future = wrapWithFuture(value, invocation);
+            CompletableFuture<Object> future = wrapWithFuture(value); // 支持全链路异步化调用
             CompletableFuture<AppResponse> appResponseFuture = future.handle((obj, t) -> {
                 AppResponse result = new AppResponse(invocation);
                 if (t != null) {
@@ -135,13 +109,11 @@ public abstract class AbstractProxyInvoker<T> implements Invoker<T> {
         }
     }
 
-    private CompletableFuture<Object> wrapWithFuture(Object value, Invocation invocation) {
-        if (value instanceof CompletableFuture) {
-            invocation.put(PROVIDER_ASYNC_KEY, Boolean.TRUE);
+    private CompletableFuture<Object> wrapWithFuture(Object value) {
+        if (RpcContext.getServiceContext().isAsyncStarted()) {
+            return ((AsyncContextImpl)(RpcContext.getServiceContext().getAsyncContext())).getInternalFuture();
+        } else if (value instanceof CompletableFuture) {
             return (CompletableFuture<Object>) value;
-        } else if (RpcContext.getServerAttachment().isAsyncStarted()) {
-            invocation.put(PROVIDER_ASYNC_KEY, Boolean.TRUE);
-            return ((AsyncContextImpl) (RpcContext.getServerAttachment().getAsyncContext())).getInternalFuture();
         }
         return CompletableFuture.completedFuture(value);
     }

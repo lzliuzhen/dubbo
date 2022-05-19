@@ -39,7 +39,7 @@ public class Request {
 
     private boolean mBroken = false;
 
-    private Object mData;
+    private Object mData; // rpc invocation
 
     public Request() {
         mId = newId();

@@ -25,7 +25,6 @@ import org.apache.dubbo.rpc.model.ScopeModelAware;
  * Inject scope bean to SPI extension instance
  */
 public class ScopeBeanExtensionInjector implements ExtensionInjector, ScopeModelAware {
-    public static final String NAME = "scopeBean";
     private ScopeModel scopeModel;
     private ScopeBeanFactory beanFactory;
 
@@ -37,6 +36,6 @@ public class ScopeBeanExtensionInjector implements ExtensionInjector, ScopeModel
 
     @Override
     public <T> T getInstance(Class<T> type, String name) {
-        return beanFactory.getBean(name, type);
+        return beanFactory.getBean(name, type); // 还可以根据容器，根据接口类型，名称，protocol
     }
 }

@@ -16,7 +16,9 @@
  */
 package org.apache.dubbo.qos.command.impl;
 
-import org.apache.dubbo.common.utils.ArrayUtils;
+import com.alibaba.fastjson.JSON;
+import io.netty.channel.Channel;
+import io.netty.util.AttributeKey;
 import org.apache.dubbo.common.utils.CollectionUtils;
 import org.apache.dubbo.common.utils.ReflectUtils;
 import org.apache.dubbo.common.utils.StringUtils;
@@ -28,10 +30,6 @@ import org.apache.dubbo.rpc.model.FrameworkModel;
 import org.apache.dubbo.rpc.model.MethodDescriptor;
 import org.apache.dubbo.rpc.model.ProviderModel;
 
-import com.alibaba.fastjson.JSON;
-import io.netty.channel.Channel;
-import io.netty.util.AttributeKey;
-
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -42,8 +40,7 @@ import java.util.Set;
 import static org.apache.dubbo.common.utils.PojoUtils.realize;
 
 @Cmd(name = "invoke", summary = "Invoke the service method.", example = {
-    "invoke IHelloService.sayHello(\"xxxx\")",
-    "invoke sayHello(\"xxxx\")"
+    "invoke IHelloService.sayHello(\"xxxx\")"
 })
 public class InvokeTelnet implements BaseCommand {
     public static final AttributeKey<String> INVOKE_MESSAGE_KEY = AttributeKey.valueOf("telnet.invoke.method.message");
@@ -58,13 +55,13 @@ public class InvokeTelnet implements BaseCommand {
 
     @Override
     public String execute(CommandContext commandContext, String[] args) {
-        if (ArrayUtils.isEmpty(args)) {
+        if (args == null || args.length == 0) {
             return "Please input method name, eg: \r\ninvoke xxxMethod(1234, \"abcd\", {\"prop\" : \"value\"})\r\n" +
                 "invoke XxxService.xxxMethod(1234, \"abcd\", {\"prop\" : \"value\"})\r\n" +
                 "invoke com.xxx.XxxService.xxxMethod(1234, \"abcd\", {\"prop\" : \"value\"})";
         }
         Channel channel = commandContext.getRemote();
-        String service = channel.attr(ChangeTelnet.SERVICE_KEY) != null ? channel.attr(ChangeTelnet.SERVICE_KEY).get() : null;
+        String service = channel.attr(ChangeTelnet.SERVICE_KEY).get();
 
         String message = args[0];
         int i = message.indexOf("(");
@@ -79,11 +76,6 @@ public class InvokeTelnet implements BaseCommand {
         if (i >= 0) {
             service = method.substring(0, i).trim();
             method = method.substring(i + 1).trim();
-        }
-
-        if (StringUtils.isEmpty(service)) {
-            return "If you want to invoke like [invoke sayHello(\"xxxx\")], please execute cd command first," +
-                " or you can execute it like [invoke IHelloService.sayHello(\"xxxx\")]";
         }
 
         List<Object> list;

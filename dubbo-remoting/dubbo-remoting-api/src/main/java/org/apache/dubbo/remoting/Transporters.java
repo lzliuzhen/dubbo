@@ -75,6 +75,10 @@ public class Transporters {
     }
 
     public static Transporter getTransporter(URL url) {
+        // 如果说用了getAdaptiveExtension，用了自适应机制，针对接口创建的代理类，代码动态生成
+        // 代理类的方法，都会根据url的参数动态提取对应的实现类的短名称，以及获取真正的你需要使用的实现类
+        // 有了真正的实现类之后，就可以去调用你的实现类的extension实力的方法就可以了
+        // 他的实现都是netty的transporter实现
         return url.getOrDefaultFrameworkModel().getExtensionLoader(Transporter.class).getAdaptiveExtension();
     }
 

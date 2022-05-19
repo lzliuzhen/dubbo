@@ -23,7 +23,6 @@ import org.apache.dubbo.config.spring.context.event.ServiceBeanExportedEvent;
 import org.apache.dubbo.config.spring.util.DubboBeanUtils;
 import org.apache.dubbo.config.support.Parameter;
 import org.apache.dubbo.rpc.model.ModuleModel;
-
 import org.springframework.aop.support.AopUtils;
 import org.springframework.beans.factory.BeanNameAware;
 import org.springframework.beans.factory.DisposableBean;
@@ -57,18 +56,8 @@ public class ServiceBean<T> extends ServiceConfig<T> implements InitializingBean
         this.service = null;
     }
 
-    public ServiceBean(ModuleModel moduleModel) {
-        super(moduleModel);
-        this.service = null;
-    }
-
     public ServiceBean(Service service) {
         super(service);
-        this.service = service;
-    }
-
-    public ServiceBean(ModuleModel moduleModel, Service service) {
-        super(moduleModel, service);
         this.service = service;
     }
 

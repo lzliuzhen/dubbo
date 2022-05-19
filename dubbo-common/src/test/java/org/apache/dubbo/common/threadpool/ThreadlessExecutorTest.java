@@ -31,7 +31,10 @@ public class ThreadlessExecutorTest {
 
     static {
         URL url = URL.valueOf("dubbo://127.0.0.1:12345");
-        executor = new ThreadlessExecutor();
+        ExecutorService sharedExecutor =
+                ExtensionLoader.getExtensionLoader(ExecutorRepository.class)
+                        .getDefaultExtension().createExecutorIfAbsent(url);
+        executor = new ThreadlessExecutor(sharedExecutor);
     }
 
     @Test

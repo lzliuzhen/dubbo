@@ -51,10 +51,15 @@ public interface Cluster {
         return getCluster(scopeModel, name, true);
     }
 
+    // 传入进来了一个参数，叫做wrap
+    // 此时肯定是需要对我们的failover cluster做一个wrap包装
     static Cluster getCluster(ScopeModel scopeModel, String name, boolean wrap) {
         if (StringUtils.isEmpty(name)) {
             name = Cluster.DEFAULT;
         }
+        // SPI机制，我们已经看的非常熟练了
+        // 获取extension实例、adaptive自适应、activate自动激活
+        // model组件体系，SPI机制是跟model组件体系强关联的
         return ScopeModelUtil.getApplicationModel(scopeModel).getExtensionLoader(Cluster.class).getExtension(name, wrap);
     }
 }

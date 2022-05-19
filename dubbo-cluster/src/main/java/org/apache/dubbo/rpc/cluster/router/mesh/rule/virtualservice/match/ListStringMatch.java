@@ -32,10 +32,10 @@ public class ListStringMatch {
     }
 
 
-    public boolean isMatch(String input) {
+    public static boolean isMatch(ListStringMatch listStringMatch, String input) {
 
-        for (StringMatch stringMatch : oneof) {
-            if (stringMatch.isMatch(input)) {
+        for (StringMatch stringMatch : listStringMatch.getOneof()) {
+            if (StringMatch.isMatch(stringMatch, input)) {
                 return true;
             }
         }

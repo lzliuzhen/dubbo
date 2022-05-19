@@ -66,6 +66,8 @@ public class Exchangers {
             throw new IllegalArgumentException("handler == null");
         }
         url = url.addParameterIfAbsent(Constants.CODEC_KEY, "exchange");
+        // 先获取到一个Exchanger组件，再用这个Exchanger组件去进行bind，拿到对应的ExchangeServer
+        // 通过SPI机制，获取到HeaderExchanger
         return getExchanger(url).bind(url, handler);
     }
 
@@ -104,11 +106,13 @@ public class Exchangers {
         if (handler == null) {
             throw new IllegalArgumentException("handler == null");
         }
+//        url = url.addParameterIfAbsent(Constants.CODEC_KEY, "exchange");
         return getExchanger(url).connect(url, handler);
     }
 
     public static Exchanger getExchanger(URL url) {
         String type = url.getParameter(Constants.EXCHANGER_KEY, Constants.DEFAULT_EXCHANGER);
+        // SPI机制，model组件体系，去拿到对应的SPI使用入口，
         return url.getOrDefaultFrameworkModel().getExtensionLoader(Exchanger.class).getExtension(type);
     }
 

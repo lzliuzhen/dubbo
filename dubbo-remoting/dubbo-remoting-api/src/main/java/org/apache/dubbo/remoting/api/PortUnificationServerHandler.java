@@ -16,46 +16,40 @@
  */
 package org.apache.dubbo.remoting.api;
 
-import org.apache.dubbo.common.URL;
-import org.apache.dubbo.common.io.Bytes;
-import org.apache.dubbo.common.logger.Logger;
-import org.apache.dubbo.common.logger.LoggerFactory;
-
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelPipeline;
-import io.netty.channel.group.ChannelGroup;
+import io.netty.channel.group.DefaultChannelGroup;
 import io.netty.handler.codec.ByteToMessageDecoder;
 import io.netty.handler.ssl.SslContext;
-import io.netty.handler.ssl.SslHandler;
+import io.netty.util.concurrent.GlobalEventExecutor;
+import org.apache.dubbo.common.URL;
 
 import java.util.List;
-import java.util.Set;
 
 public class PortUnificationServerHandler extends ByteToMessageDecoder {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(
-        PortUnificationServerHandler.class);
-
-    private final ChannelGroup channels;
-
     private final SslContext sslCtx;
     private final URL url;
-    private final boolean detectSsl;
     private final List<WireProtocol> protocols;
+    private final DefaultChannelGroup channels = new DefaultChannelGroup(GlobalEventExecutor.INSTANCE);
 
-    public PortUnificationServerHandler(URL url, SslContext sslCtx, boolean detectSsl,
-        List<WireProtocol> protocols, ChannelGroup channels) {
+    public PortUnificationServerHandler(URL url, List<WireProtocol> protocols) {
+        this(url, null,protocols);
+    }
+
+    public PortUnificationServerHandler(URL url, SslContext sslCtx, List<WireProtocol> protocols) {
         this.url = url;
         this.sslCtx = sslCtx;
         this.protocols = protocols;
-        this.detectSsl = detectSsl;
-        this.channels = channels;
     }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        LOGGER.error("Unexpected exception from downstream before protocol detected.", cause);
+        super.exceptionCaught(ctx, cause);
+    }
+
+    public DefaultChannelGroup getChannels() {
+        return channels;
     }
 
     @Override
@@ -65,62 +59,40 @@ public class PortUnificationServerHandler extends ByteToMessageDecoder {
     }
 
     @Override
-    protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out)
-        throws Exception {
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        super.channelInactive(ctx);
+        channels.remove(ctx.channel());
+    }
+
+    // 不同的网络协议，最核心的不同点，编码和解码，在网络里传输的其实都是字节流
+    // 如何把数据变成字节流，以及如何把字节流转换为数据
+    @Override
+    protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
         // Will use the first five bytes to detect a protocol.
         if (in.readableBytes() < 5) {
             return;
         }
 
-        if (isSsl(in)) {
-            enableSsl(ctx);
-        } else {
-            for (final WireProtocol protocol : protocols) {
-                in.markReaderIndex();
-                final ProtocolDetector.Result result = protocol.detector().detect(ctx, in);
-                in.resetReaderIndex();
-                switch (result) {
-                    case UNRECOGNIZED:
-                        continue;
-                    case RECOGNIZED:
-                        protocol.configServerPipeline(url, ctx.pipeline(), sslCtx);
-                        ctx.pipeline().remove(this);
-                    case NEED_MORE_DATA:
-                        return;
-                    default:
-                        return;
-                }
+        // 就跟我们之前讲的，完全对上了，在数据交换和通信的时候，在这里是基于最新的triple https协议来进行数据交换
+        for (final WireProtocol protocol : protocols) {
+            in.markReaderIndex();
+            final ProtocolDetector.Result result = protocol.detector().detect(ctx, in);
+            in.resetReaderIndex();
+            switch (result) {
+                case UNRECOGNIZED:
+                    continue;
+                case RECOGNIZED:
+                    protocol.configServerPipeline(url, ctx.pipeline(), sslCtx);
+                    ctx.pipeline().remove(this);
+                case NEED_MORE_DATA:
+                    return;
+                default:
+                    return;
             }
-            byte[] preface = new byte[in.readableBytes()];
-            in.readBytes(preface);
-            Set<String> supported = url.getApplicationModel()
-                .getExtensionLoader(WireProtocol.class)
-                .getSupportedExtensions();
-            LOGGER.error(String.format("Can not recognize protocol from downstream=%s . "
-                    + "preface=%s protocols=%s", ctx.channel().remoteAddress(),
-                Bytes.bytes2hex(preface),
-                supported));
-
-            // Unknown protocol; discard everything and close the connection.
-            in.clear();
-            ctx.close();
         }
+        // Unknown protocol; discard everything and close the connection.
+        in.clear();
+        ctx.close();
     }
-
-    private void enableSsl(ChannelHandlerContext ctx) {
-        ChannelPipeline p = ctx.pipeline();
-        p.addLast("ssl", sslCtx.newHandler(ctx.alloc()));
-        p.addLast("unificationA",
-            new PortUnificationServerHandler(url, sslCtx, false, protocols, channels));
-        p.remove(this);
-    }
-
-    private boolean isSsl(ByteBuf buf) {
-        if (detectSsl) {
-            return SslHandler.isEncrypted(buf);
-        }
-        return false;
-    }
-
 
 }

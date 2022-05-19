@@ -29,6 +29,9 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Round robin load balance.
+ *
+ * 轮询，你有10个invokers，先调用第一个invoker，然后再调用第二个invoker
+ *
  */
 public class RoundRobinLoadBalance extends AbstractLoadBalance {
     public static final String NAME = "roundrobin";
@@ -95,6 +98,8 @@ public class RoundRobinLoadBalance extends AbstractLoadBalance {
         long now = System.currentTimeMillis();
         Invoker<T> selectedInvoker = null;
         WeightedRoundRobin selectedWRR = null;
+
+        // 在这里会进行invoker的遍历
         for (Invoker<T> invoker : invokers) {
             String identifyString = invoker.getUrl().toIdentityString();
             int weight = getWeight(invoker, invocation);
@@ -110,7 +115,7 @@ public class RoundRobinLoadBalance extends AbstractLoadBalance {
             }
             long cur = weightedRoundRobin.increaseCurrent();
             weightedRoundRobin.setLastUpdate(now);
-            if (cur > maxCurrent) {
+            if (cur > maxCurrent) { // 通过这个算法，应该是可以做到你的权重最高的invoker
                 maxCurrent = cur;
                 selectedInvoker = invoker;
                 selectedWRR = weightedRoundRobin;
@@ -121,6 +126,7 @@ public class RoundRobinLoadBalance extends AbstractLoadBalance {
             map.entrySet().removeIf(item -> now - item.getValue().getLastUpdate() > RECYCLE_PERIOD);
         }
         if (selectedInvoker != null) {
+            // 你第一次选择出来的invoker，因为他被选择过了
             selectedWRR.sel(totalWeight);
             return selectedInvoker;
         }

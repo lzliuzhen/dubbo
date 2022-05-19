@@ -24,7 +24,7 @@ import org.apache.dubbo.registry.client.migration.model.MigrationRule;
 import org.apache.dubbo.registry.client.migration.model.MigrationStep;
 
 public class MigrationRuleHandler<T> {
-    public static final String DUBBO_SERVICEDISCOVERY_MIGRATION = "dubbo.application.migration.step";
+    public static final String DUBBO_SERVICEDISCOVERY_MIGRATION = "dubbo.application.service-discovery.migration";
     private static final Logger logger = LoggerFactory.getLogger(MigrationRuleHandler.class);
 
     private MigrationClusterInvoker<T> migrationInvoker;
@@ -37,8 +37,11 @@ public class MigrationRuleHandler<T> {
         this.consumerURL = url;
     }
 
+    // 一旦说有一个新的迁移规则，此时把迁移规则传递进来，此时就可以做对应的迁移
     public synchronized void doMigrate(MigrationRule rule) {
+        // 之前我们都看到过，创建出来的源头invoker，ServiceDiscoveryMigrationInvoker
         if (migrationInvoker instanceof ServiceDiscoveryMigrationInvoker) {
+            //
             refreshInvoker(MigrationStep.FORCE_APPLICATION, 1.0f, rule);
             return;
         }

@@ -16,8 +16,6 @@
  */
 package org.apache.dubbo.common.convert.multiple;
 
-import org.apache.dubbo.rpc.model.FrameworkModel;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -38,7 +36,7 @@ public class StringToArrayConverterTest {
 
     @BeforeEach
     public void init() {
-        converter = new StringToArrayConverter(FrameworkModel.defaultModel());
+        converter = new StringToArrayConverter();
     }
 
     @Test

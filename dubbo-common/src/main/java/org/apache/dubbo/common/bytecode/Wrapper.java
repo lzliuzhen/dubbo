@@ -16,12 +16,10 @@
  */
 package org.apache.dubbo.common.bytecode;
 
-import org.apache.dubbo.common.utils.ClassUtils;
-import org.apache.dubbo.common.utils.ReflectUtils;
-
 import javassist.ClassPool;
 import javassist.CtMethod;
-import javassist.LoaderClassPath;
+import org.apache.dubbo.common.utils.ClassUtils;
+import org.apache.dubbo.common.utils.ReflectUtils;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
@@ -127,6 +125,7 @@ public abstract class Wrapper {
             throw new IllegalArgumentException("Can not create wrapper for primitive type: " + c);
         }
 
+        // 如何动态去生成一个wrapper出来
         String name = c.getName();
         ClassLoader cl = ClassUtils.getClassLoader(c);
 
@@ -151,14 +150,13 @@ public abstract class Wrapper {
                 continue;
             }
 
-            c1.append(" if( $2.equals(\"").append(fn).append("\") ){ ((").append(f.getDeclaringClass().getName()).append(")w).").append(fn).append('=').append(arg(ft, "$3")).append("; return; }");
-            c2.append(" if( $2.equals(\"").append(fn).append("\") ){ return ($w)((").append(f.getDeclaringClass().getName()).append(")w).").append(fn).append("; }");
+            c1.append(" if( $2.equals(\"").append(fn).append("\") ){ ((" + f.getDeclaringClass().getName() + ")w).").append(fn).append('=').append(arg(ft, "$3")).append("; return; }");
+            c2.append(" if( $2.equals(\"").append(fn).append("\") ){ return ($w)((" + f.getDeclaringClass().getName() + ")w).").append(fn).append("; }");
             pts.put(fn, ft);
         }
 
         final ClassPool classPool = new ClassPool(ClassPool.getDefault());
-        classPool.insertClassPath(new LoaderClassPath(cl));
-        classPool.insertClassPath(new DubboLoaderClassPath());
+        classPool.insertClassPath(new CustomizedLoaderClassPath(cl));
 
         List<String> allMethod = new ArrayList<>();
         try {
@@ -175,7 +173,7 @@ public abstract class Wrapper {
                                  .collect(Collectors.toList())
                                  .toArray(new Method[] {});
         // get all public method.
-        boolean hasMethod = ClassUtils.hasMethods(methods);
+        boolean hasMethod = hasMethods(methods);
         if (hasMethod) {
             Map<String, Integer> sameNameMethodCount = new HashMap<>((int) (methods.length / 0.75f) + 1);
             for (Method m : methods) {
@@ -226,7 +224,7 @@ public abstract class Wrapper {
             c3.append(" }");
         }
 
-        c3.append(" throw new ").append(NoSuchMethodException.class.getName()).append("(\"Not found method \\\"\"+$2+\"\\\" in class ").append(c.getName()).append(".\"); }");
+        c3.append(" throw new " + NoSuchMethodException.class.getName() + "(\"Not found method \\\"\"+$2+\"\\\" in class " + c.getName() + ".\"); }");
 
         // deal with get/set method.
         Matcher matcher;
@@ -248,13 +246,15 @@ public abstract class Wrapper {
                 pts.put(pn, pt);
             }
         }
-        c1.append(" throw new ").append(NoSuchPropertyException.class.getName()).append("(\"Not found property \\\"\"+$2+\"\\\" field or setter method in class ").append(c.getName()).append(".\"); }");
-        c2.append(" throw new ").append(NoSuchPropertyException.class.getName()).append("(\"Not found property \\\"\"+$2+\"\\\" field or getter method in class ").append(c.getName()).append(".\"); }");
+        c1.append(" throw new " + NoSuchPropertyException.class.getName() + "(\"Not found property \\\"\"+$2+\"\\\" field or setter method in class " + c.getName() + ".\"); }");
+        c2.append(" throw new " + NoSuchPropertyException.class.getName() + "(\"Not found property \\\"\"+$2+\"\\\" field or getter method in class " + c.getName() + ".\"); }");
 
         // make class
         long id = WRAPPER_CLASS_COUNTER.getAndIncrement();
+
+        // 他是动态拼接一个wrapper class的代码
         ClassGenerator cc = ClassGenerator.newInstance(cl);
-        cc.setClassName(c.getName() + "DubboWrap" + id);
+        cc.setClassName((Modifier.isPublic(c.getModifiers()) ? Wrapper.class.getName() : c.getName() + "$sw") + id);
         cc.setSuperClass(Wrapper.class);
 
         cc.addDefaultConstructor();
@@ -276,7 +276,8 @@ public abstract class Wrapper {
         cc.addMethod(c3.toString());
 
         try {
-            Class<?> wc = cc.toClass(c);
+            // 最终生成的是一个Wrapper的子类，子类的代码全部是动态代码拼接的
+            Class<?> wc = cc.toClass();
             // setup static field.
             wc.getField("pts").set(null, pts);
             wc.getField("pns").set(null, pts.keySet().toArray(new String[0]));
@@ -286,6 +287,8 @@ public abstract class Wrapper {
             for (Method m : ms.values()) {
                 wc.getField("mts" + ix++).set(null, m.getParameterTypes());
             }
+
+            // 先是生成一个class，再用这个生成的class，去使用jdk反射构造实例
             return (Wrapper) wc.getDeclaredConstructor().newInstance();
         } catch (RuntimeException e) {
             throw e;
@@ -347,6 +350,18 @@ public abstract class Wrapper {
 
     private static String propertyName(String pn) {
         return pn.length() == 1 || Character.isLowerCase(pn.charAt(1)) ? Character.toLowerCase(pn.charAt(0)) + pn.substring(1) : pn;
+    }
+
+    private static boolean hasMethods(Method[] methods) {
+        if (methods == null || methods.length == 0) {
+            return false;
+        }
+        for (Method m : methods) {
+            if (m.getDeclaringClass() != Object.class) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

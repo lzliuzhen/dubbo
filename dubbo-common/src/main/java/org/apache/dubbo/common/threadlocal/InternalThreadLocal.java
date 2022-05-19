@@ -31,7 +31,7 @@ import java.util.Set;
  * <p></p>
  * This design is learning from {@see io.netty.util.concurrent.FastThreadLocal} which is in Netty.
  */
-public class InternalThreadLocal<V> extends ThreadLocal<V> {
+public class InternalThreadLocal<V> {
 
     private static final int VARIABLES_TO_REMOVE_INDEX = InternalThreadLocalMap.nextVariableIndex();
 
@@ -115,7 +115,6 @@ public class InternalThreadLocal<V> extends ThreadLocal<V> {
      * Returns the current value for the current thread
      */
     @SuppressWarnings("unchecked")
-    @Override
     public final V get() {
         InternalThreadLocalMap threadLocalMap = InternalThreadLocalMap.get();
         Object v = threadLocalMap.indexedVariable(index);
@@ -124,16 +123,6 @@ public class InternalThreadLocal<V> extends ThreadLocal<V> {
         }
 
         return initialize(threadLocalMap);
-    }
-
-    public final V getWithoutInitialize() {
-        InternalThreadLocalMap threadLocalMap = InternalThreadLocalMap.get();
-        Object v = threadLocalMap.indexedVariable(index);
-        if (v != InternalThreadLocalMap.UNSET) {
-            return (V) v;
-        }
-
-        return null;
     }
 
     private V initialize(InternalThreadLocalMap threadLocalMap) {
@@ -152,7 +141,6 @@ public class InternalThreadLocal<V> extends ThreadLocal<V> {
     /**
      * Sets the value for the current thread.
      */
-    @Override
     public final void set(V value) {
         if (value == null || value == InternalThreadLocalMap.UNSET) {
             remove();
@@ -168,7 +156,6 @@ public class InternalThreadLocal<V> extends ThreadLocal<V> {
      * Sets the value to uninitialized; a proceeding call to get() will trigger a call to initialValue().
      */
     @SuppressWarnings("unchecked")
-    @Override
     public final void remove() {
         remove(InternalThreadLocalMap.getIfSet());
     }
@@ -199,8 +186,7 @@ public class InternalThreadLocal<V> extends ThreadLocal<V> {
     /**
      * Returns the initial value for this thread-local variable.
      */
-    @Override
-    protected V initialValue() {
+    protected V initialValue() throws Exception {
         return null;
     }
 

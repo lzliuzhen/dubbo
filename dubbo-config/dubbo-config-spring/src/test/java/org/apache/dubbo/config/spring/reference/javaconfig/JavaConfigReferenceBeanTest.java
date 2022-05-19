@@ -16,6 +16,7 @@
  */
 package org.apache.dubbo.config.spring.reference.javaconfig;
 
+import com.sun.management.HotSpotDiagnosticMXBean;
 import org.apache.dubbo.config.annotation.DubboReference;
 import org.apache.dubbo.config.annotation.DubboService;
 import org.apache.dubbo.config.annotation.Reference;
@@ -26,11 +27,14 @@ import org.apache.dubbo.config.spring.api.HelloService;
 import org.apache.dubbo.config.spring.context.annotation.EnableDubbo;
 import org.apache.dubbo.config.spring.impl.HelloServiceImpl;
 import org.apache.dubbo.config.spring.reference.ReferenceBeanBuilder;
+import org.apache.dubbo.config.spring.registrycenter.RegistryCenter;
+import org.apache.dubbo.config.spring.registrycenter.ZookeeperMultipleRegistryCenter;
 import org.apache.dubbo.rpc.service.GenericException;
 import org.apache.dubbo.rpc.service.GenericService;
-
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -39,13 +43,53 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.PropertySource;
 
+import javax.management.MBeanServer;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.lang.management.ManagementFactory;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
 public class JavaConfigReferenceBeanTest {
+
+    private static RegistryCenter multipleRegistryCenter;
+
+    @BeforeAll
+    public static void beforeAll() {
+        multipleRegistryCenter = new ZookeeperMultipleRegistryCenter();
+        multipleRegistryCenter.startup();
+    }
+
+    @AfterAll
+    public static void afterAll() throws Exception {
+        multipleRegistryCenter.shutdown();
+        multipleRegistryCenter = null;
+
+        //Thread.sleep(10000);
+        //dumpHeap("/Users/gongdewei/work/dump/dubbo/", true);
+    }
+
+    public static void dumpHeap(String dirpath, boolean live) throws Exception {
+
+        java.lang.management.RuntimeMXBean runtime =
+            java.lang.management.ManagementFactory.getRuntimeMXBean();
+        java.lang.reflect.Field jvm = runtime.getClass().getDeclaredField("jvm");
+        jvm.setAccessible(true);
+        sun.management.VMManagement mgmt =
+            (sun.management.VMManagement) jvm.get(runtime);
+        java.lang.reflect.Method pid_method =
+            mgmt.getClass().getDeclaredMethod("getProcessId");
+        pid_method.setAccessible(true);
+        int pid = (Integer) pid_method.invoke(mgmt);
+
+        MBeanServer server = ManagementFactory.getPlatformMBeanServer();
+        HotSpotDiagnosticMXBean mxBean = ManagementFactory.newPlatformMXBeanProxy(
+            server, "com.sun.management:type=HotSpotDiagnostic", HotSpotDiagnosticMXBean.class);
+        String filepath = dirpath + pid + ".hprof";
+        mxBean.dumpHeap(filepath, live);
+        System.out.println("Dump heap to file: " + filepath);
+    }
 
     @BeforeEach
     public void setUp() {

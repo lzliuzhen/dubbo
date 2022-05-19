@@ -18,7 +18,6 @@ package org.apache.dubbo.metadata.report.support;
 
 import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.utils.NetUtils;
-import org.apache.dubbo.metadata.MappingListener;
 import org.apache.dubbo.metadata.definition.model.ServiceDefinition;
 import org.apache.dubbo.metadata.report.MetadataReport;
 import org.apache.dubbo.metadata.report.identifier.MetadataIdentifier;
@@ -77,21 +76,6 @@ public class AbstractMetadataReportFactoryTest {
                 @Override
                 public List<String> getSubscribedURLs(SubscriberMetadataIdentifier subscriberMetadataIdentifier) {
                     return null;
-                }
-
-                @Override
-                public void removeServiceAppMappingListener(String serviceKey, MappingListener listener) {
-
-                }
-
-                @Override
-                public boolean shouldReportDefinition() {
-                    return true;
-                }
-
-                @Override
-                public boolean shouldReportMetadata() {
-                    return false;
                 }
 
                 @Override

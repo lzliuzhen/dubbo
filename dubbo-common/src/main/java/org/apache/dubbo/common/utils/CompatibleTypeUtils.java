@@ -171,7 +171,7 @@ public class CompatibleTypeUtils {
                 return BigInteger.valueOf(number.longValue());
             }
             if (type == BigDecimal.class) {
-                return new BigDecimal(number.toString());
+                return BigDecimal.valueOf(number.doubleValue());
             }
             if (type == Date.class) {
                 return new Date(number.longValue());

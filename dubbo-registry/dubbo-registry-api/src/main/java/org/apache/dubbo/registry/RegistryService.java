@@ -25,11 +25,20 @@ import java.util.List;
  *
  * @see org.apache.dubbo.registry.Registry
  * @see org.apache.dubbo.registry.RegistryFactory#getRegistry(URL)
+ *
+ * 代表的是注册中心作为一个服务，能够提供的能力这样子
+ *
  */
 public interface RegistryService {
 
     /**
      * Register data, such as : provider service, consumer address, route rule, override rule and other data.
+     *
+     * 按照现在最新的三大中心分离的思想，路由规则属于服务治理的数据，路由规则的配置是用来进行精细化的流量分发的管控
+     * 控制你的consumer端所有实例发出的流量，是如何分发给你的provider端各种服务实例的，流量分发管控
+     * 在系统运行过程中可以动态的去调整，服务治理的一个范畴
+     * 现在已经主要推荐把路由规则转移到专门的配置中心里去，config center
+     *
      * <p>
      * Registering is required to support the contract:<br>
      * 1. When the URL sets the check=false parameter. When the registration fails, the exception is not thrown and retried in the background. Otherwise, the exception will be thrown.<br>

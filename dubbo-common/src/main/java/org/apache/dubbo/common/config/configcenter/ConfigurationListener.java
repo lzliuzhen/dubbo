@@ -29,5 +29,6 @@ public interface ConfigurationListener extends EventListener {
      *
      * @param event config change event
      */
-    void process(ConfigChangedEvent event);
+    void process(ConfigChangedEvent event); // 你如果要去监听配置项的变更
+    // 必须实现ConfigurationListener接口，这样的话，人家才能按照这个接口的规则来回调你
 }

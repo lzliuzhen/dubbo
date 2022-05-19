@@ -20,6 +20,8 @@ import org.apache.dubbo.rpc.model.ScopeModel;
 
 import java.util.concurrent.Future;
 
+/**
+ */
 public interface Deployer<E extends ScopeModel> {
 
     /**
@@ -87,5 +89,4 @@ public interface Deployer<E extends ScopeModel> {
 
     void removeDeployListener(DeployListener<E> listener);
 
-    Throwable getError();
 }

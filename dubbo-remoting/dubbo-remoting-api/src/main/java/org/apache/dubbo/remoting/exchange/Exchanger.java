@@ -41,6 +41,11 @@ public interface Exchanger {
      * @return message server
      */
     @Adaptive({Constants.EXCHANGER_KEY})
+    // 有一个疑问，为什么说@Adaptive注解是加在方法上面
+    // 看过自适应获取SPI extension实例的代码，如果你的这个接口里的方法，加了@Adaptive注解
+    // 他会针对你的Exchanger创建代理类，他里面的方法的代码都是动态拼接出来的，都是根据你的url里面具体的参数
+    // 去获取到你指定的一个值，根据这个值再去动态获取你要用的实现类
+    // 去找到你对应的一个实现类之后，再通过调用你的真正的实现类的extension实例，去执行对应的bind方法
     ExchangeServer bind(URL url, ExchangeHandler handler) throws RemotingException;
 
     /**

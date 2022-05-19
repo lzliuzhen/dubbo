@@ -26,13 +26,12 @@ public class AsyncContextImpl implements AsyncContext {
 
     private CompletableFuture<Object> future;
 
-    private final RpcContext.RestoreContext restoreContext;
-    private final ClassLoader restoreClassLoader;
-    private ClassLoader stagedClassLoader;
+    private RpcContextAttachment storedContext;
+    private RpcContextAttachment storedServerContext;
 
     public AsyncContextImpl() {
-        restoreContext = RpcContext.storeContext();
-        restoreClassLoader = Thread.currentThread().getContextClassLoader();
+        this.storedContext = RpcContext.getClientAttachment();
+        this.storedServerContext = RpcContext.getServerContext();
     }
 
     @Override
@@ -68,19 +67,9 @@ public class AsyncContextImpl implements AsyncContext {
 
     @Override
     public void signalContextSwitch() {
-        RpcContext.restoreContext(restoreContext);
-        if (restoreClassLoader != null) {
-            stagedClassLoader = Thread.currentThread().getContextClassLoader();
-            Thread.currentThread().setContextClassLoader(restoreClassLoader);
-        }
-    }
-
-    @Override
-    public void resetContext() {
-        RpcContext.removeContext();
-        if (stagedClassLoader != null) {
-            Thread.currentThread().setContextClassLoader(restoreClassLoader);
-        }
+        RpcContext.restoreContext(storedContext);
+        RpcContext.restoreServerContext(storedServerContext);
+        // Restore any other contexts in here if necessary.
     }
 
     public CompletableFuture<Object> getInternalFuture() {

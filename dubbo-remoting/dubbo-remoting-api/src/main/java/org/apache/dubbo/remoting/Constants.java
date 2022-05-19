@@ -101,6 +101,9 @@ public interface Constants {
 
     String DISPACTHER_KEY = "dispacther";
 
+    // 说实话，这个默认值一般来说是够的，也是合理的，比cpu核多一个
+    // 一个cpu核执行多个线程，是属于并发，如果是不同的cpu核同时执行不同的线程，并行效果
+    // 就是每个cpu核能执行一个线程
     int DEFAULT_IO_THREADS = Math.min(Runtime.getRuntime().availableProcessors() + 1, 32);
 
     String EVENT_LOOP_BOSS_POOL_NAME  = "NettyServerBoss";
@@ -134,7 +137,7 @@ public interface Constants {
     String PROMPT_KEY = "prompt";
 
     String DEFAULT_PROMPT = "dubbo>";
-    String TELNET_KEY = "telnet";
+    String TELNET = "telnet";
     String HEARTBEAT_KEY = "heartbeat";
     int DEFAULT_HEARTBEAT = 60 * 1000;
     String HEARTBEAT_TIMEOUT_KEY = "heartbeat.timeout";

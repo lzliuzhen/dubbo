@@ -18,7 +18,6 @@ package org.apache.dubbo.rpc.protocol.injvm;
 
 import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.constants.CommonConstants;
-import org.apache.dubbo.common.threadlocal.InternalThreadLocalMap;
 import org.apache.dubbo.common.threadpool.manager.ExecutorRepository;
 import org.apache.dubbo.common.utils.ArrayUtils;
 import org.apache.dubbo.common.utils.ReflectUtils;
@@ -34,26 +33,17 @@ import org.apache.dubbo.rpc.Result;
 import org.apache.dubbo.rpc.RpcContext;
 import org.apache.dubbo.rpc.RpcException;
 import org.apache.dubbo.rpc.RpcInvocation;
-import org.apache.dubbo.rpc.TimeoutCountDown;
 import org.apache.dubbo.rpc.model.MethodDescriptor;
 import org.apache.dubbo.rpc.model.ServiceModel;
 import org.apache.dubbo.rpc.protocol.AbstractInvoker;
-import org.apache.dubbo.rpc.support.RpcUtils;
 
 import java.lang.reflect.Type;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeUnit;
 
-import static org.apache.dubbo.common.constants.CommonConstants.DEFAULT_TIMEOUT;
-import static org.apache.dubbo.common.constants.CommonConstants.ENABLE_TIMEOUT_COUNTDOWN_KEY;
 import static org.apache.dubbo.common.constants.CommonConstants.LOCALHOST_VALUE;
-import static org.apache.dubbo.common.constants.CommonConstants.TIMEOUT_ATTACHMENT_KEY;
-import static org.apache.dubbo.common.constants.CommonConstants.TIMEOUT_KEY;
-import static org.apache.dubbo.common.constants.CommonConstants.TIME_COUNTDOWN_KEY;
 import static org.apache.dubbo.rpc.Constants.ASYNC_KEY;
 
 /**
@@ -69,16 +59,13 @@ public class InjvmInvoker<T> extends AbstractInvoker<T> {
 
     private final ParamDeepCopyUtil paramDeepCopyUtil;
 
-    private final boolean shouldIgnoreSameModule;
-
     InjvmInvoker(Class<T> type, URL url, String key, Map<String, Exporter<?>> exporterMap) {
         super(type, url);
         this.key = key;
         this.exporterMap = exporterMap;
         this.executorRepository = url.getOrDefaultApplicationModel().getExtensionLoader(ExecutorRepository.class).getDefaultExtension();
         this.paramDeepCopyUtil = url.getOrDefaultFrameworkModel().getExtensionLoader(ParamDeepCopyUtil.class)
-            .getExtension(url.getParameter(CommonConstants.INJVM_COPY_UTIL_KEY, DefaultParamDeepCopyUtil.NAME));
-        this.shouldIgnoreSameModule = url.getParameter(CommonConstants.INJVM_IGNORE_SAME_MODULE_KEY, false);
+            .getExtension(url.getParameter("injvm-copy-util", DefaultParamDeepCopyUtil.NAME));
     }
 
     @Override
@@ -93,19 +80,20 @@ public class InjvmInvoker<T> extends AbstractInvoker<T> {
 
     @Override
     public Result doInvoke(Invocation invocation) throws Throwable {
+        // 直接把之前本地发布过的服务实例从exporterMap里拿出来就可以了
         Exporter<?> exporter = InjvmProtocol.getExporter(exporterMap, getUrl());
         if (exporter == null) {
             throw new RpcException("Service [" + key + "] not found.");
         }
         RpcContext.getServiceContext().setRemoteAddress(LOCALHOST_VALUE, 0);
         // Solve local exposure, the server opens the token, and the client call fails.
+        // 直接从injvm exporter里获取之前本地发布的proxy invoker
         Invoker<?> invoker = exporter.getInvoker();
         URL serverURL = invoker.getUrl();
         boolean serverHasToken = serverURL.hasParameter(Constants.TOKEN_KEY);
         if (serverHasToken) {
             invocation.setAttachment(Constants.TOKEN_KEY, serverURL.getParameter(Constants.TOKEN_KEY));
         }
-        invocation.setAttachment(TIMEOUT_KEY, calculateTimeout(invocation, invocation.getMethodName()));
 
         String desc = ReflectUtils.getDesc(invocation.getParameterTypes());
 
@@ -117,16 +105,15 @@ public class InjvmInvoker<T> extends AbstractInvoker<T> {
             // use consumer executor
             ExecutorService executor = executorRepository.createExecutorIfAbsent(getUrl());
             CompletableFuture<AppResponse> appResponseFuture = CompletableFuture.supplyAsync(() -> {
+                // 必然会去调用我们的proxy invoker的invoker方法，目标实现类的方法就会被调用
+                // javassist机制去调用，jdk反射去进行调用
+
                 Result result = invoker.invoke(copiedInvocation);
                 if (result.hasException()) {
-                    AppResponse appResponse = new AppResponse(result.getException());
-                    appResponse.setObjectAttachments(new HashMap<>(result.getObjectAttachments()));
-                    return appResponse;
+                    return new AppResponse(result.getException());
                 } else {
                     rebuildValue(invocation, desc, result);
-                    AppResponse appResponse = new AppResponse(result.getValue());
-                    appResponse.setObjectAttachments(new HashMap<>(result.getObjectAttachments()));
-                    return appResponse;
+                    return new AppResponse(result.getValue());
                 }
             }, executor);
             // save for 2.6.x compatibility, for example, TraceFilter in Zipkin uses com.alibaba.xxx.FutureAdapter
@@ -135,43 +122,15 @@ public class InjvmInvoker<T> extends AbstractInvoker<T> {
             result.setExecutor(executor);
             return result;
         } else {
-            Result result;
-            // clear thread local before child invocation, prevent context pollution
-            InternalThreadLocalMap originTL = InternalThreadLocalMap.getAndRemove();
-            try {
-                result = invoker.invoke(copiedInvocation);
-            } finally {
-                InternalThreadLocalMap.set(originTL);
-            }
-            CompletableFuture<AppResponse> future = new CompletableFuture<>();
-            AppResponse rpcResult = new AppResponse(copiedInvocation);
-            if (result instanceof AsyncRpcResult) {
-                result.whenCompleteWithContext((r, t) -> {
-                    if (t != null) {
-                        rpcResult.setException(t);
-                    } else {
-                        if (r.hasException()) {
-                            rpcResult.setException(r.getException());
-                        } else {
-                            Object rebuildValue = rebuildValue(invocation, desc, r.getValue());
-                            rpcResult.setValue(rebuildValue);
-                        }
-                    }
-                    rpcResult.setObjectAttachments(new HashMap<>(r.getObjectAttachments()));
-                    future.complete(rpcResult);
-                });
+            // 必然会去调用我们的proxy invoker的invoker方法，目标实现类的方法就会被调用
+            // javassist机制去调用，jdk反射去进行调用
+            Result result = invoker.invoke(copiedInvocation);
+            if (result.hasException()) {
+                return result;
             } else {
-                if (result.hasException()) {
-                    rpcResult.setException(result.getException());
-                } else {
-                    Object rebuildValue = rebuildValue(invocation, desc, result.getValue());
-                    rpcResult.setValue(rebuildValue);
-                }
-                rpcResult.setObjectAttachments(new HashMap<>(result.getObjectAttachments()));
-                future.complete(rpcResult);
+                rebuildValue(invocation, desc, result);
+                return result;
             }
-            return new AsyncRpcResult(future, invocation);
-
         }
     }
 
@@ -195,17 +154,11 @@ public class InjvmInvoker<T> extends AbstractInvoker<T> {
             return invocation;
         }
         String methodName = invocation.getMethodName();
-
-        ServiceModel consumerServiceModel = invocation.getServiceModel();
-        boolean shouldSkip = shouldIgnoreSameModule && consumerServiceModel != null &&
-            Objects.equals(providerServiceModel.getModuleModel(), consumerServiceModel.getModuleModel());
-        if (CommonConstants.$INVOKE.equals(methodName) || shouldSkip) {
+        if(CommonConstants.$INVOKE.equals(methodName)) {
             // generic invoke, skip copy arguments
-            RpcInvocation copiedInvocation = new RpcInvocation(invocation.getTargetServiceUniqueName(),
-                providerServiceModel, methodName, invocation.getServiceName(), invocation.getProtocolServiceKey(),
+            RpcInvocation copiedInvocation = new RpcInvocation(providerServiceModel, methodName, invocation.getServiceName(), invocation.getProtocolServiceKey(),
                 invocation.getParameterTypes(), invocation.getArguments(), new HashMap<>(invocation.getObjectAttachments()),
-                invocation.getInvoker(), new HashMap<>(),
-                invocation instanceof RpcInvocation ? ((RpcInvocation) invocation).getInvokeMode() : null);
+                invocation.getInvoker(), invocation.getAttributes());
             copiedInvocation.setInvoker(invoker);
             return copiedInvocation;
         }
@@ -231,11 +184,9 @@ public class InjvmInvoker<T> extends AbstractInvoker<T> {
                     realArgument = args;
                 }
 
-                RpcInvocation copiedInvocation = new RpcInvocation(invocation.getTargetServiceUniqueName(),
-                    providerServiceModel, methodName, invocation.getServiceName(), invocation.getProtocolServiceKey(),
+                RpcInvocation copiedInvocation = new RpcInvocation(providerServiceModel, methodName, invocation.getServiceName(), invocation.getProtocolServiceKey(),
                     pts, realArgument, new HashMap<>(invocation.getObjectAttachments()),
-                    invocation.getInvoker(), new HashMap<>(),
-                    invocation instanceof RpcInvocation ? ((RpcInvocation) invocation).getInvokeMode() : null);
+                    invocation.getInvoker(), invocation.getAttributes());
                 copiedInvocation.setInvoker(invoker);
                 return copiedInvocation;
             } finally {
@@ -246,7 +197,8 @@ public class InjvmInvoker<T> extends AbstractInvoker<T> {
         }
     }
 
-    private Object rebuildValue(Invocation invocation, String desc, Object originValue) {
+    private void rebuildValue(Invocation invocation, String desc, Result result) {
+        Object originValue = result.getValue();
         Object value = originValue;
         ClassLoader cl = Thread.currentThread().getContextClassLoader();
         try {
@@ -258,7 +210,7 @@ public class InjvmInvoker<T> extends AbstractInvoker<T> {
                     value = paramDeepCopyUtil.copy(getUrl(), originValue, returnType);
                 }
             }
-            return value;
+            result.setValue(value);
         } finally {
             Thread.currentThread().setContextClassLoader(cl);
         }
@@ -269,22 +221,6 @@ public class InjvmInvoker<T> extends AbstractInvoker<T> {
             return localUrl.getParameter(ASYNC_KEY, false);
         }
         return remoteUrl.getParameter(ASYNC_KEY, false);
-    }
-
-    private int calculateTimeout(Invocation invocation, String methodName) {
-        Object countdown = RpcContext.getClientAttachment().getObjectAttachment(TIME_COUNTDOWN_KEY);
-        int timeout;
-        if (countdown == null) {
-            timeout = (int) RpcUtils.getTimeout(getUrl(), methodName, RpcContext.getClientAttachment(), DEFAULT_TIMEOUT);
-            if (getUrl().getParameter(ENABLE_TIMEOUT_COUNTDOWN_KEY, false)) {
-                invocation.setObjectAttachment(TIMEOUT_ATTACHMENT_KEY, timeout); // pass timeout to remote server
-            }
-        } else {
-            TimeoutCountDown timeoutCountDown = (TimeoutCountDown) countdown;
-            timeout = (int) timeoutCountDown.timeRemaining(TimeUnit.MILLISECONDS);
-            invocation.setObjectAttachment(TIMEOUT_ATTACHMENT_KEY, timeout);// pass timeout to remote server
-        }
-        return timeout;
     }
 
 }

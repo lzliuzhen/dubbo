@@ -22,7 +22,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * ExtensionDirector is a scoped extension loader manager.
@@ -33,13 +32,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class ExtensionDirector implements ExtensionAccessor {
 
+    // key就是接口类型的class对象，value就是extension loader
     private final ConcurrentMap<Class<?>, ExtensionLoader<?>> extensionLoadersMap = new ConcurrentHashMap<>(64);
-    private final ConcurrentMap<Class<?>, ExtensionScope> extensionScopeMap = new ConcurrentHashMap<>(64);
-    private final ExtensionDirector parent;
+    // extension director自己，也是有一个父级组件，会有一个树形的关系
+    private ExtensionDirector parent;
+    // extension scope，你获取到的扩展实现对象，他的使用范围是多宽
     private final ExtensionScope scope;
-    private final List<ExtensionPostProcessor> extensionPostProcessors = new ArrayList<>();
-    private final ScopeModel scopeModel;
-    private final AtomicBoolean destroyed = new AtomicBoolean();
+    // extension扩展实例的后处理器，extension实例之后需要进行后处理
+    private List<ExtensionPostProcessor> extensionPostProcessors = new ArrayList<>();
+    // 每个model组件都会关联一个extension directory组件，反过来，也会关联一个model组件
+    private ScopeModel scopeModel;
 
     public ExtensionDirector(ExtensionDirector parent, ExtensionScope scope, ScopeModel scopeModel) {
         this.parent = parent;
@@ -62,10 +64,11 @@ public class ExtensionDirector implements ExtensionAccessor {
         return this;
     }
 
+    // 他是一个extension loader管理组件
+    // 就可以拿到各种接口的extension loader，去拿到接口的扩展实现类
+    // 一般来说，都是先针对一个加了@SPI注解的接口的class，传递进来，去获取一个extension loader
     @Override
-    @SuppressWarnings("unchecked")
     public <T> ExtensionLoader<T> getExtensionLoader(Class<T> type) {
-        checkDestroyed();
         if (type == null) {
             throw new IllegalArgumentException("Extension type == null");
         }
@@ -78,28 +81,32 @@ public class ExtensionDirector implements ExtensionAccessor {
         }
 
         // 1. find in local cache
+        // 按照你的接口的class类型去获取extension loader缓存
         ExtensionLoader<T> loader = (ExtensionLoader<T>) extensionLoadersMap.get(type);
 
-        ExtensionScope scope = extensionScopeMap.get(type);
-        if (scope == null) {
-            SPI annotation = type.getAnnotation(SPI.class);
-            scope = annotation.scope();
-            extensionScopeMap.put(type, scope);
-        }
+        // 会从你的接口class里面拿到对接口打的@SPI注解，
+        final SPI annotation = type.getAnnotation(SPI.class);
+        // 拿到了这个SPI注解之后，就会获取这个注解里的scope范围，extension scope
+        ExtensionScope scope = annotation.scope();
 
+        // 获取出来的extension loader是空的，同时scope是self范围
         if (loader == null && scope == ExtensionScope.SELF) {
             // create an instance in self scope
             loader = createExtensionLoader0(type);
         }
 
         // 2. find in parent
+        // 如果说extension loader没有拿到，同时你的范围不是self
         if (loader == null) {
+            // 是有一个什么，在创建extension loader的过程中，会有父组件依赖和搜寻
             if (this.parent != null) {
                 loader = this.parent.getExtensionLoader(type);
             }
         }
 
         // 3. create it
+        // 第一步，先去缓存搜索；第二步，scope=self，尝试直接自己创建；第三步，parent里搜索
+        // 最后一步，直接尝试自己创建extension loader
         if (loader == null) {
             loader = createExtensionLoader(type);
         }
@@ -112,13 +119,13 @@ public class ExtensionDirector implements ExtensionAccessor {
         if (isScopeMatched(type)) {
             // if scope is matched, just create it
             loader = createExtensionLoader0(type);
+        } else {
+            // if scope is not matched, ignore it
         }
         return loader;
     }
 
-    @SuppressWarnings("unchecked")
     private <T> ExtensionLoader<T> createExtensionLoader0(Class<T> type) {
-        checkDestroyed();
         ExtensionLoader<T> loader;
         extensionLoadersMap.putIfAbsent(type, new ExtensionLoader<T>(type, this, scopeModel));
         loader = (ExtensionLoader<T>) extensionLoadersMap.get(type);
@@ -139,22 +146,6 @@ public class ExtensionDirector implements ExtensionAccessor {
     }
 
     public void removeAllCachedLoader() {
-    }
-
-    public void destroy() {
-        if (destroyed.compareAndSet(false, true)) {
-            for (ExtensionLoader<?> extensionLoader : extensionLoadersMap.values()) {
-                extensionLoader.destroy();
-            }
-            extensionLoadersMap.clear();
-            extensionScopeMap.clear();
-            extensionPostProcessors.clear();
-        }
-    }
-
-    private void checkDestroyed() {
-        if (destroyed.get()) {
-            throw new IllegalStateException("ExtensionDirector is destroyed");
-        }
+        // extensionLoadersMap.clear();
     }
 }

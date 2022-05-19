@@ -19,7 +19,6 @@ package org.apache.dubbo.metadata.test;
 import org.apache.dubbo.common.URL;
 import org.apache.dubbo.common.logger.Logger;
 import org.apache.dubbo.common.logger.LoggerFactory;
-import org.apache.dubbo.metadata.MappingListener;
 import org.apache.dubbo.metadata.report.identifier.KeyTypeEnum;
 import org.apache.dubbo.metadata.report.identifier.MetadataIdentifier;
 import org.apache.dubbo.metadata.report.identifier.ServiceMetadataIdentifier;
@@ -98,10 +97,5 @@ public class JTestMetadataReport4Test extends AbstractMetadataReport {
     @Override
     public String getServiceDefinition(MetadataIdentifier consumerMetadataIdentifier) {
         return store.get(consumerMetadataIdentifier.getUniqueKey(KeyTypeEnum.UNIQUE_KEY));
-    }
-
-    @Override
-    public void removeServiceAppMappingListener(String serviceKey, MappingListener listener) {
-
     }
 }

@@ -18,7 +18,6 @@ package org.apache.dubbo.config;
 
 import org.apache.dubbo.common.utils.CollectionUtils;
 import org.apache.dubbo.config.support.Parameter;
-import org.apache.dubbo.rpc.model.ModuleModel;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -101,9 +100,7 @@ public abstract class AbstractServiceConfig extends AbstractInterfaceConfig {
      */
     protected String protocolIds;
 
-    /**
-     * Max allowed executing times
-     */
+    // max allowed execute times
     private Integer executes;
 
     /**
@@ -128,13 +125,6 @@ public abstract class AbstractServiceConfig extends AbstractInterfaceConfig {
      */
     @Deprecated
     private Boolean exportAsync;
-
-    public AbstractServiceConfig() {
-    }
-
-    public AbstractServiceConfig(ModuleModel moduleModel) {
-        super(moduleModel);
-    }
 
     @Override
     protected void checkDefault() {

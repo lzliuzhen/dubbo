@@ -17,7 +17,6 @@
 package org.apache.dubbo.common.url.component;
 
 import org.apache.dubbo.common.utils.LRUCache;
-import org.apache.dubbo.common.utils.StringUtils;
 
 import java.util.Map;
 
@@ -30,12 +29,12 @@ public class URLItemCache {
 
     public static void putParams(Map<String, String> params, String key, String value) {
         String cachedKey = PARAM_KEY_CACHE.get(key);
-        if (StringUtils.isBlank(cachedKey)) {
+        if (cachedKey == null) {
             cachedKey = key;
             PARAM_KEY_CACHE.put(key, key);
         }
         String cachedValue = PARAM_VALUE_CACHE.get(value);
-        if (StringUtils.isBlank(cachedValue)) {
+        if (cachedValue == null) {
             cachedValue = value;
             PARAM_VALUE_CACHE.put(value, value);
         }
@@ -43,37 +42,37 @@ public class URLItemCache {
         params.put(cachedKey, cachedValue);
     }
 
-    public static String checkPath(String path) {
-        if (StringUtils.isBlank(path)) {
-            return path;
+    public static String checkPath(String _path) {
+        if (_path == null) {
+            return _path;
         }
-        String cachedPath = PATH_CACHE.putIfAbsent(path, path);
-        if (StringUtils.isNotBlank(cachedPath)) {
+        String cachedPath = PATH_CACHE.putIfAbsent(_path, _path);
+        if (cachedPath != null) {
             return cachedPath;
         }
-        return path;
+        return _path;
     }
 
-    public static String checkRevision(String revision) {
-        if (StringUtils.isBlank(revision)) {
+    public static String checkRevision(String _revision) {
+        if (_revision == null) {
+            return _revision;
+        }
+        String revision = REVISION_CACHE.putIfAbsent(_revision, _revision);
+        if (revision != null) {
             return revision;
         }
-        String cachedRevision = REVISION_CACHE.putIfAbsent(revision, revision);
-        if (StringUtils.isNotBlank(cachedRevision)) {
-            return cachedRevision;
-        }
-        return revision;
+        return _revision;
     }
 
-    public static String intern(String protocol) {
-        if (StringUtils.isBlank(protocol)) {
-            return protocol;
+    public static String intern(String _protocol) {
+        if (_protocol == null) {
+            return _protocol;
         }
-        return protocol.intern();
+        return _protocol.intern();
     }
 
     public static void putParamsIntern(Map<String, String> params, String key, String value) {
-        if (StringUtils.isBlank(key) || StringUtils.isBlank(value)) {
+        if (key == null || value == null) {
             params.put(key, value);
             return;
         }

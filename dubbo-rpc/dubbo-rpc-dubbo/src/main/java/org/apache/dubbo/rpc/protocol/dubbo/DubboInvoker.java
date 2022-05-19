@@ -59,7 +59,7 @@ import static org.apache.dubbo.rpc.Constants.TOKEN_KEY;
  */
 public class DubboInvoker<T> extends AbstractInvoker<T> {
 
-    private final ExchangeClient[] clients;
+    private final ExchangeClient[] clients; // exchange client底层封装的就是netty client
 
     private final AtomicPositiveInteger index = new AtomicPositiveInteger();
 
@@ -86,26 +86,40 @@ public class DubboInvoker<T> extends AbstractInvoker<T> {
 
     @Override
     protected Result doInvoke(final Invocation invocation) throws Throwable {
+        // 从rpc调用开始来看
         RpcInvocation inv = (RpcInvocation) invocation;
         final String methodName = RpcUtils.getMethodName(invocation);
         inv.setAttachment(PATH_KEY, getUrl().getPath());
         inv.setAttachment(VERSION_KEY, version);
 
+        // ExchangeClient，Exchange是跟网络相关的
+        // 底层是会去封装对应的netty，NettyClient一般是被封装在里面的
         ExchangeClient currentClient;
         if (clients.length == 1) {
             currentClient = clients[0];
         } else {
+            // 如果说要是有多个用于网络通信的client，就会按照逐个去使用
+            // 循环使用的过程，Ring数组是一样的，取用环
             currentClient = clients[index.getAndIncrement() % clients.length];
         }
+
         try {
             boolean isOneway = RpcUtils.isOneway(getUrl(), invocation);
             int timeout = calculateTimeout(invocation, methodName);
-            invocation.setAttachment(TIMEOUT_KEY, timeout);
+            invocation.put(TIMEOUT_KEY, timeout);
             if (isOneway) {
                 boolean isSent = getUrl().getMethodParameter(methodName, Constants.SENT_KEY, false);
                 currentClient.send(inv, isSent);
                 return AsyncRpcResult.newDefaultAsyncResult(invocation);
             } else {
+                // dubbo 3.0比较新的版本，支持的都是异步调用，提高性能和并发
+                // 到这里为止，都是业务现场在执行调用，把dubbo方方面面的代码都分析了一个遍
+                // 网络模型，线程模型，都分析的很清楚了
+                // 是不是说等到你的请求的响应回来了，此时来回调你呢？
+                // 如果说我们把小文件系统、服务注册中心系统，两个中间件的项目都做过了之后
+                // 都是把请求写出去，人家会读取请求，处理请求，发送响应，你这里就需要等待响应
+                // 对响应，你到底是同步等待响应，还是异步等待响应
+                // 先返回方法，保存好一个回调监听器（业务方提供过来的），等待响应回来了，就可以回调监听器
                 ExecutorService executor = getCallbackExecutor(getUrl(), inv);
                 CompletableFuture<AppResponse> appResponseFuture =
                         currentClient.request(inv, timeout, executor).thenApply(obj -> (AppResponse) obj);
@@ -113,6 +127,8 @@ public class DubboInvoker<T> extends AbstractInvoker<T> {
                 FutureContext.getContext().setCompatibleFuture(appResponseFuture);
                 AsyncRpcResult result = new AsyncRpcResult(appResponseFuture, inv);
                 result.setExecutor(executor);
+                // 在外侧想要拿到这个结果的人，必须会基于这个结果里的future同步的去进行等待
+                // provider方返回一个结果回来，肯定会写入到future里去，此时就可以通过future拿到结果
                 return result;
             }
         } catch (TimeoutException e) {
@@ -127,6 +143,8 @@ public class DubboInvoker<T> extends AbstractInvoker<T> {
         if (!super.isAvailable()) {
             return false;
         }
+        // 对于每个dubbo invoker里面都会封装一个对应的client，netty client
+        // 此时就需要通过netty client去判断一下，dubbo invoker是否可用
         for (ExchangeClient client : clients) {
             if (client.isConnected() && !client.hasAttribute(Constants.CHANNEL_ATTRIBUTE_READONLY_KEY)) {
                 //cannot write == not Available ?
@@ -186,7 +204,7 @@ public class DubboInvoker<T> extends AbstractInvoker<T> {
 
     private int calculateTimeout(Invocation invocation, String methodName) {
         Object countdown = RpcContext.getClientAttachment().getObjectAttachment(TIME_COUNTDOWN_KEY);
-        int timeout;
+        int timeout = DEFAULT_TIMEOUT;
         if (countdown == null) {
             timeout = (int) RpcUtils.getTimeout(getUrl(), methodName, RpcContext.getClientAttachment(), DEFAULT_TIMEOUT);
             if (getUrl().getParameter(ENABLE_TIMEOUT_COUNTDOWN_KEY, false)) {

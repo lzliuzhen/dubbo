@@ -39,11 +39,11 @@ public class ClassLoaderResourceLoader {
 
     static {
         // register resources destroy listener
-        GlobalResourcesRepository.registerGlobalDisposable(()-> destroy());
+        GlobalResourcesRepository.getInstance().registerDisposable(()-> destroy(), true);
     }
 
-    public static Map<ClassLoader, Set<URL>> loadResources(String fileName, List<ClassLoader> classLoaders) {
-        Map<ClassLoader, Set<URL>> resources = new ConcurrentHashMap<>();
+    public static Map<ClassLoader, Set<java.net.URL>> loadResources(String fileName, List<ClassLoader> classLoaders) {
+        Map<ClassLoader, Set<java.net.URL>> resources = new ConcurrentHashMap<>();
         CountDownLatch countDownLatch = new CountDownLatch(classLoaders.size());
         for (ClassLoader classLoader : classLoaders) {
             GlobalResourcesRepository.getGlobalExecutorService().submit(() -> {
@@ -59,10 +59,10 @@ public class ClassLoaderResourceLoader {
         return Collections.unmodifiableMap(new LinkedHashMap<>(resources));
     }
 
-    public static Set<URL> loadResources(String fileName, ClassLoader currentClassLoader) {
-        Map<ClassLoader, Map<String, Set<URL>>> classLoaderCache;
+    public static Set<java.net.URL> loadResources(String fileName, ClassLoader currentClassLoader) {
+        Map<ClassLoader, Map<String, Set<java.net.URL>>> classLoaderCache;
         if (classLoaderResourcesCache == null || (classLoaderCache = classLoaderResourcesCache.get()) == null) {
-            synchronized (ClassLoaderResourceLoader.class) {
+            synchronized (ConfigUtils.class) {
                 if (classLoaderResourcesCache == null || (classLoaderCache = classLoaderResourcesCache.get()) == null) {
                     classLoaderCache = new ConcurrentHashMap<>();
                     classLoaderResourcesCache = new SoftReference<>(classLoaderCache);
@@ -72,10 +72,10 @@ public class ClassLoaderResourceLoader {
         if (!classLoaderCache.containsKey(currentClassLoader)) {
             classLoaderCache.putIfAbsent(currentClassLoader, new ConcurrentHashMap<>());
         }
-        Map<String, Set<URL>> urlCache = classLoaderCache.get(currentClassLoader);
+        Map<String, Set<java.net.URL>> urlCache = classLoaderCache.get(currentClassLoader);
         if (!urlCache.containsKey(fileName)) {
-            Set<URL> set = new LinkedHashSet<>();
-            Enumeration<URL> urls;
+            Set<java.net.URL> set = new LinkedHashSet<>();
+            Enumeration<URL> urls = null;
             try {
                 urls = currentClassLoader.getResources(fileName);
                 boolean isNative = NativeUtils.isNative();
@@ -98,8 +98,8 @@ public class ClassLoaderResourceLoader {
     }
 
     public static void destroy() {
-        synchronized (ClassLoaderResourceLoader.class) {
-            classLoaderResourcesCache = null;
+        if (classLoaderResourcesCache != null) {
+            classLoaderResourcesCache.clear();
         }
     }
 
@@ -113,8 +113,4 @@ public class ClassLoaderResourceLoader {
     }
 
 
-    // for test
-    protected static SoftReference<Map<ClassLoader, Map<String, Set<URL>>>> getClassLoaderResourcesCache() {
-        return classLoaderResourcesCache;
-    }
 }

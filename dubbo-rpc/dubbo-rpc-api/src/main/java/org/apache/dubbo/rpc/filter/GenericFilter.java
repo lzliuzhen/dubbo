@@ -16,6 +16,9 @@
  */
 package org.apache.dubbo.rpc.filter;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonSyntaxException;
+import com.google.gson.reflect.TypeToken;
 import org.apache.dubbo.common.beanutil.JavaBeanAccessor;
 import org.apache.dubbo.common.beanutil.JavaBeanDescriptor;
 import org.apache.dubbo.common.beanutil.JavaBeanSerializeUtil;
@@ -42,10 +45,6 @@ import org.apache.dubbo.rpc.model.ScopeModelAware;
 import org.apache.dubbo.rpc.service.GenericException;
 import org.apache.dubbo.rpc.service.GenericService;
 import org.apache.dubbo.rpc.support.ProtocolUtils;
-
-import com.google.gson.Gson;
-import com.google.gson.JsonSyntaxException;
-import com.google.gson.reflect.TypeToken;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
@@ -184,10 +183,11 @@ public class GenericFilter implements Filter, Filter.Listener, ScopeModelAware {
                     }
                 }
 
-                RpcInvocation rpcInvocation = new RpcInvocation(inv.getTargetServiceUniqueName(),
-                    invoker.getUrl().getServiceModel(), method.getName(), invoker.getInterface().getName(), invoker.getUrl().getProtocolServiceKey(),
-                    method.getParameterTypes(), args, inv.getObjectAttachments(),
-                    inv.getInvoker(), inv.getAttributes(), inv instanceof RpcInvocation ? ((RpcInvocation) inv).getInvokeMode() : null);
+                RpcInvocation rpcInvocation =
+                        new RpcInvocation(invoker.getUrl().getServiceModel(), method, invoker.getInterface().getName(), invoker.getUrl().getProtocolServiceKey(), args,
+                                inv.getObjectAttachments(), inv.getAttributes());
+                rpcInvocation.setInvoker(inv.getInvoker());
+                rpcInvocation.setTargetServiceUniqueName(inv.getTargetServiceUniqueName());
 
                 return invoker.invoke(rpcInvocation);
             } catch (NoSuchMethodException | ClassNotFoundException e) {

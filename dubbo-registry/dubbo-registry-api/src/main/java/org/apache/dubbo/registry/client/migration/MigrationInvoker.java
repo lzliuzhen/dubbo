@@ -17,10 +17,8 @@
 package org.apache.dubbo.registry.client.migration;
 
 import org.apache.dubbo.common.URL;
-import org.apache.dubbo.common.constants.CommonConstants;
 import org.apache.dubbo.common.logger.Logger;
 import org.apache.dubbo.common.logger.LoggerFactory;
-import org.apache.dubbo.common.status.reporter.FrameworkStatusReportService;
 import org.apache.dubbo.common.utils.CollectionUtils;
 import org.apache.dubbo.common.utils.StringUtils;
 import org.apache.dubbo.registry.Registry;
@@ -58,7 +56,6 @@ public class MigrationInvoker<T> implements MigrationClusterInvoker<T> {
     private RegistryProtocol registryProtocol;
     private MigrationRuleListener migrationRuleListener;
     private ConsumerModel consumerModel;
-    private FrameworkStatusReportService reportService;
 
     private volatile ClusterInvoker<T> invoker;
     private volatile ClusterInvoker<T> serviceDiscoveryInvoker;
@@ -84,27 +81,26 @@ public class MigrationInvoker<T> implements MigrationClusterInvoker<T> {
                             Class<T> type,
                             URL url,
                             URL consumerUrl) {
-        this.invoker = invoker;
-        this.serviceDiscoveryInvoker = serviceDiscoveryInvoker;
+        this.invoker = invoker; // 这个一开始是null
+        this.serviceDiscoveryInvoker = serviceDiscoveryInvoker; // 这个一开始也是null
         this.registryProtocol = registryProtocol;
-        this.cluster = cluster;
-        this.registry = registry;
+        this.cluster = cluster; // 这个是我们获取出来的集群容错的策略
+        this.registry = registry; // 这个是我们获取出来的一个服务注册中心
         this.type = type;
         this.url = url;
         this.consumerUrl = consumerUrl;
         this.consumerModel = (ConsumerModel) consumerUrl.getServiceModel();
-        this.reportService = consumerUrl.getOrDefaultApplicationModel().getBeanFactory().getBean(FrameworkStatusReportService.class);
 
-        if (consumerModel != null) {
-            Object object = consumerModel.getServiceMetadata().getAttribute(CommonConstants.CURRENT_CLUSTER_INVOKER_KEY);
+        if (consumerModel != null) { // 我们自己就是一个consumer
+            Object object = consumerModel.getServiceMetadata().getAttribute("currentClusterInvoker");
             Map<Registry, MigrationInvoker<?>> invokerMap;
             if (object instanceof Map) {
                 invokerMap = (Map<Registry, MigrationInvoker<?>>) object;
             } else {
                 invokerMap = new ConcurrentHashMap<>();
             }
-            invokerMap.put(registry, this);
-            consumerModel.getServiceMetadata().addAttribute(CommonConstants.CURRENT_CLUSTER_INVOKER_KEY, invokerMap);
+            invokerMap.put(registry, this); // 放置当前的invoker
+            consumerModel.getServiceMetadata().addAttribute("currentClusterInvoker", invokerMap);
         }
     }
 
@@ -240,8 +236,15 @@ public class MigrationInvoker<T> implements MigrationClusterInvoker<T> {
     @Override
     public void migrateToApplicationFirstInvoker(MigrationRule newRule) {
         CountDownLatch latch = new CountDownLatch(0);
-        refreshInterfaceInvoker(latch);
-        refreshServiceDiscoveryInvoker(latch);
+
+        // 这块的是比较关键的
+        // migration，迁移，两个核心的invoker，invoker，service discovery invoker
+        // 所以此时，在这里进行invoker的刷新处理，就是在给我们的migration invoker去注入下一个环节的invoker
+        // 他还把migration rule，给传入进来了
+        // 是否是说，两个invoker都搞好了之后，就会根据最新的一个迁移规则，来决定当前应该是用哪个invoker
+        // 来作为我们的migration invoker的下一级invoker
+        refreshInterfaceInvoker(latch); // 第一个interface invoker
+        refreshServiceDiscoveryInvoker(latch); // 第二个service discovery invoker
 
         // directly calculate preferred invoker, will not wait until address notify
         // calculation will re-occurred when address notify later
@@ -270,22 +273,30 @@ public class MigrationInvoker<T> implements MigrationClusterInvoker<T> {
 
     @Override
     public Result invoke(Invocation invocation) throws RpcException {
+        // 真正再执行invoker调用的时候，我们可以看一下这个migration invoker里面的逻辑
+        // 尝试理解一下，他为啥叫做migration invoker，迁移
+        // invoker和serviceDiscoveryInvoker有一个针对currentAvailableInvoker进行切换的过程
+        // 迁移，migration的名义就从这里而来
+
         if (currentAvailableInvoker != null) {
             if (step == APPLICATION_FIRST) {
                 // call ratio calculation based on random value
-                if (promotion < 100 && ThreadLocalRandom.current().nextDouble(100) > promotion) {
-                    // fall back to interface mode
+                if (ThreadLocalRandom.current().nextDouble(100) > promotion) {
                     return invoker.invoke(invocation);
                 }
-                // check if invoker available for each time
-                return decideInvoker().invoke(invocation);
             }
             return currentAvailableInvoker.invoke(invocation);
         }
 
         switch (step) {
             case APPLICATION_FIRST:
-                currentAvailableInvoker = decideInvoker();
+                if (checkInvokerAvailable(serviceDiscoveryInvoker)) {
+                    currentAvailableInvoker = serviceDiscoveryInvoker;
+                } else if (checkInvokerAvailable(invoker)) {
+                    currentAvailableInvoker = invoker;
+                } else {
+                    currentAvailableInvoker = serviceDiscoveryInvoker;
+                }
                 break;
             case FORCE_APPLICATION:
                 currentAvailableInvoker = serviceDiscoveryInvoker;
@@ -296,17 +307,6 @@ public class MigrationInvoker<T> implements MigrationClusterInvoker<T> {
         }
 
         return currentAvailableInvoker.invoke(invocation);
-    }
-
-    private ClusterInvoker<T> decideInvoker() {
-        if (currentAvailableInvoker == serviceDiscoveryInvoker) {
-            if (checkInvokerAvailable(serviceDiscoveryInvoker)) {
-                return serviceDiscoveryInvoker;
-            }
-            return invoker;
-        } else {
-            return currentAvailableInvoker;
-        }
     }
 
     @Override
@@ -328,13 +328,13 @@ public class MigrationInvoker<T> implements MigrationClusterInvoker<T> {
             serviceDiscoveryInvoker.destroy();
         }
         if (consumerModel != null) {
-            Object object = consumerModel.getServiceMetadata().getAttribute(CommonConstants.CURRENT_CLUSTER_INVOKER_KEY);
+            Object object = consumerModel.getServiceMetadata().getAttribute("currentClusterInvoker");
             Map<Registry, MigrationInvoker<?>> invokerMap;
             if (object instanceof Map) {
                 invokerMap = (Map<Registry, MigrationInvoker<?>>) object;
                 invokerMap.remove(registry);
                 if (invokerMap.isEmpty()) {
-                    consumerModel.getServiceMetadata().getAttributeMap().remove(CommonConstants.CURRENT_CLUSTER_INVOKER_KEY);
+                    consumerModel.getServiceMetadata().getAttributeMap().remove("currentClusterInvoker");
                 }
             }
         }
@@ -433,14 +433,15 @@ public class MigrationInvoker<T> implements MigrationClusterInvoker<T> {
             if (serviceDiscoveryInvoker != null) {
                 serviceDiscoveryInvoker.destroy();
             }
+            // RegistryProtocol的getServiceDiscoveryInvoker
             serviceDiscoveryInvoker = registryProtocol.getServiceDiscoveryInvoker(cluster, registry, type, url);
         }
         setListener(serviceDiscoveryInvoker, () -> {
             latch.countDown();
-            if (reportService.hasReporter()) {
-                reportService.reportConsumptionStatus(
-                    reportService.createConsumptionReport(consumerUrl.getServiceInterface(), consumerUrl.getVersion(), consumerUrl.getGroup(), "app"));
-            }
+            //TODO FrameworkStatusReporter
+//            FrameworkStatusReporter.reportConsumptionStatus(
+//                createConsumptionReport(consumerUrl.getServiceInterface(), consumerUrl.getVersion(), consumerUrl.getGroup(), "app")
+//            );
             if (step == APPLICATION_FIRST) {
                 calcPreferredInvoker(rule);
             }
@@ -457,14 +458,16 @@ public class MigrationInvoker<T> implements MigrationClusterInvoker<T> {
             if (invoker != null) {
                 invoker.destroy();
             }
+            // 核心逻辑在这里，RegistryProtocol.getInvoker，把MockClusterWrapper
+            // SPI去获取的，此时因为需要基于Wrapper进行包装，所以说他是有一层包装的逻辑再里面的
             invoker = registryProtocol.getInvoker(cluster, registry, type, url);
         }
         setListener(invoker, () -> {
             latch.countDown();
-            if (reportService.hasReporter()) {
-                reportService.reportConsumptionStatus(
-                    reportService.createConsumptionReport(consumerUrl.getServiceInterface(), consumerUrl.getVersion(), consumerUrl.getGroup(), "interface"));
-            }
+            //TODO FrameworkStatusReporter
+//            FrameworkStatusReporter.reportConsumptionStatus(
+//                createConsumptionReport(consumerUrl.getServiceInterface(), consumerUrl.getVersion(), consumerUrl.getGroup(), "interface")
+//            );
             if (step == APPLICATION_FIRST) {
                 calcPreferredInvoker(rule);
             }

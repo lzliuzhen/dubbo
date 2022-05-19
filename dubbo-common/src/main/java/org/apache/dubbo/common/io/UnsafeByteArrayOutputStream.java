@@ -42,12 +42,12 @@ public class UnsafeByteArrayOutputStream extends OutputStream {
 
     @Override
     public void write(int b) {
-        int newCount = mCount + 1;
-        if (newCount > mBuffer.length) {
-            mBuffer = Bytes.copyOf(mBuffer, Math.max(mBuffer.length << 1, newCount));
+        int newcount = mCount + 1;
+        if (newcount > mBuffer.length) {
+            mBuffer = Bytes.copyOf(mBuffer, Math.max(mBuffer.length << 1, newcount));
         }
         mBuffer[mCount] = (byte) b;
-        mCount = newCount;
+        mCount = newcount;
     }
 
     @Override
@@ -58,12 +58,12 @@ public class UnsafeByteArrayOutputStream extends OutputStream {
         if (len == 0) {
             return;
         }
-        int newCount = mCount + len;
-        if (newCount > mBuffer.length) {
-            mBuffer = Bytes.copyOf(mBuffer, Math.max(mBuffer.length << 1, newCount));
+        int newcount = mCount + len;
+        if (newcount > mBuffer.length) {
+            mBuffer = Bytes.copyOf(mBuffer, Math.max(mBuffer.length << 1, newcount));
         }
         System.arraycopy(b, off, mBuffer, mCount, len);
-        mCount = newCount;
+        mCount = newcount;
     }
 
     public int size() {

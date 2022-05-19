@@ -139,13 +139,16 @@ public class DubboInvokerAvailableTest {
 
         ExchangeClient exchangeClient = getClients((DubboInvoker<?>) invoker)[0];
         Assertions.assertFalse(exchangeClient.isClosed());
-        exchangeClient.setAttribute(Constants.CHANNEL_ATTRIBUTE_READONLY_KEY, Boolean.TRUE);
+        try {
+            exchangeClient.setAttribute(Constants.CHANNEL_ATTRIBUTE_READONLY_KEY, Boolean.TRUE);
+            fail();
+        } catch (IllegalStateException e) {
+
+        }
         //invoke method --> init client
         IDemoService service = (IDemoService) proxy.getProxy(invoker);
         Assertions.assertEquals("ok", service.get());
-        Assertions.assertFalse(invoker.isAvailable());
 
-        exchangeClient.removeAttribute(Constants.CHANNEL_ATTRIBUTE_READONLY_KEY);
         Assertions.assertTrue(invoker.isAvailable());
         exchangeClient.setAttribute(Constants.CHANNEL_ATTRIBUTE_READONLY_KEY, Boolean.TRUE);
         Assertions.assertFalse(invoker.isAvailable());

@@ -41,7 +41,14 @@ public class FailfastClusterInvoker<T> extends AbstractClusterInvoker<T> {
 
     @Override
     public Result doInvoke(Invocation invocation, List<Invoker<T>> invokers, LoadBalance loadbalance) throws RpcException {
+        // fail fast，顾名思义，就是说一旦你调用的时候遇到了异常，直接抛出异常，不再进行重试了
+
+        // failover，是支持故障转移，支持重试的，查询接口，支持幂等的写接口
+        // failast，如果是一个写接口，不支持幂等，万一你是胡乱的重试几次，可能会导致数据重复
+
+        // 先是对invokers进行检查
         checkInvokers(invokers, invocation);
+        // 在进行负载均衡策略实现，选择目标invoker的时候，用到的代码是一样的
         Invoker<T> invoker = select(loadbalance, invocation, invokers, null);
         try {
             return invokeWithContext(invoker, invocation);
@@ -49,6 +56,7 @@ public class FailfastClusterInvoker<T> extends AbstractClusterInvoker<T> {
             if (e instanceof RpcException && ((RpcException) e).isBiz()) { // biz exception.
                 throw (RpcException) e;
             }
+            // 自己封装一个异常往外抛就可以了
             throw new RpcException(e instanceof RpcException ? ((RpcException) e).getCode() : 0,
                 "Failfast invoke providers " + invoker.getUrl() + " " + loadbalance.getClass().getSimpleName()
                     + " for service " + getInterface().getName()

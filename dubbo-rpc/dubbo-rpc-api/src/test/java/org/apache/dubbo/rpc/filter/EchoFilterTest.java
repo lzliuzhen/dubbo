@@ -22,7 +22,6 @@ import org.apache.dubbo.rpc.Filter;
 import org.apache.dubbo.rpc.Invocation;
 import org.apache.dubbo.rpc.Invoker;
 import org.apache.dubbo.rpc.Result;
-import org.apache.dubbo.rpc.RpcInvocation;
 import org.apache.dubbo.rpc.support.DemoService;
 
 import org.junit.jupiter.api.Test;
@@ -38,7 +37,7 @@ public class EchoFilterTest {
     @SuppressWarnings("unchecked")
     @Test
     public void testEcho() {
-        Invocation invocation = mock(RpcInvocation.class);
+        Invocation invocation = mock(Invocation.class);
         given(invocation.getMethodName()).willReturn("$echo");
         given(invocation.getParameterTypes()).willReturn(new Class<?>[]{Enum.class});
         given(invocation.getArguments()).willReturn(new Object[]{"hello"});

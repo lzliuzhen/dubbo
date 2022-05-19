@@ -79,7 +79,10 @@ public class ExchangeCodec extends TelnetCodec {
     @Override
     public Object decode(Channel channel, ChannelBuffer buffer) throws IOException {
         int readable = buffer.readableBytes();
-        byte[] header = new byte[Math.min(readable, HEADER_LENGTH)];
+        byte[] header = new byte[Math.min(readable, HEADER_LENGTH)]; // 就跟我们之前编码和序列化的时候，一样
+        // 先去把header头数据读取出来
+        // 这边是如何进行一个读取的呢，会看一下，你的byte数字是多少个字节，此时就从你的网络输入流里
+        // 读取16个字节，读取出来了以后，把数据放到你的byte[]数组里去就可以了
         buffer.readBytes(header);
         return decode(channel, buffer, readable, header);
     }
@@ -87,6 +90,9 @@ public class ExchangeCodec extends TelnetCodec {
     @Override
     protected Object decode(Channel channel, ChannelBuffer buffer, int readable, byte[] header) throws IOException {
         // check magic number.
+        // 写了一个注释，刚开始对你的header，先读取magic number，去做一个检查
+        // 对你的header数组，刚开始的magic number对应的字节做一个检查，如果不符合magic number的标准的话
+        // 进入if判断，就会去做一些对应的处理
         if (readable > 0 && header[0] != MAGIC_HIGH
                 || readable > 1 && header[1] != MAGIC_LOW) {
             int length = header.length;
@@ -95,6 +101,7 @@ public class ExchangeCodec extends TelnetCodec {
                 buffer.readBytes(header, length, readable - length);
             }
             for (int i = 1; i < header.length - 1; i++) {
+                // 会对header字节数组做一个遍历，拿到每个字节
                 if (header[i] == MAGIC_HIGH && header[i + 1] == MAGIC_LOW) {
                     buffer.readerIndex(buffer.readerIndex() - header.length + i);
                     header = Bytes.copyOf(header, i);
@@ -103,12 +110,13 @@ public class ExchangeCodec extends TelnetCodec {
             }
             return super.decode(channel, buffer, readable, header);
         }
+
         // check length.
         if (readable < HEADER_LENGTH) {
             return DecodeResult.NEED_MORE_INPUT;
         }
 
-        // get data length.
+        // get data length. // header：magic number、request flag、request id、data length
         int len = Bytes.bytes2int(header, 12);
 
         // When receiving response, how to exceed the length, then directly construct a response to the client.
@@ -117,6 +125,8 @@ public class ExchangeCodec extends TelnetCodec {
         if (null != obj) {
             return obj;
         }
+
+        checkPayload(channel, len);
 
         int tt = len + HEADER_LENGTH;
         if (readable < tt) {
@@ -127,6 +137,8 @@ public class ExchangeCodec extends TelnetCodec {
         ChannelBufferInputStream is = new ChannelBufferInputStream(buffer, len);
 
         try {
+            // 如果说你的header检查全部通过了之后，此时对你的buffer嫁接一个input stream
+            // 其次就是有一个len，就是body长度，就可以把你的body给他读取出来，进行反序列化，转为对象
             return decodeBody(channel, is, header);
         } finally {
             if (is.available() > 0) {
@@ -223,40 +235,67 @@ public class ExchangeCodec extends TelnetCodec {
 
     protected void encodeRequest(Channel channel, ChannelBuffer buffer, Request req) throws IOException {
         Serialization serialization = getSerialization(channel, req);
+
+        // 再往下走就开始进入按照dubbo协议进行二进制数据组织的过程了
+        // 协议，规定好数据是如何组织的，小文件，服务注册中心，看完的 ，底层网络编程的，协议
+        // 头几个字节是代表了什么东西，接下来几个字节是代表了什么东西，这套规定，就是所谓的协议，dubbo协议
+        // 我们自己开发的中间件的项目里，也用了对应的协议
+        // 按照协议去组织二进制的数据就可以了，当然有一个部分是要把我们的请求对象，转为二进制的数据，此时就需要序列化
+        // 序列化就是把对象转二进制，反序列化就是把二进制转对象
+
         // header.
+        // dubbo协议而言，请求头，一共是16个字节，这个里面会放16个字节的数据
         byte[] header = new byte[HEADER_LENGTH];
         // set magic number.
+        // magic number没什么特殊的含义，但是你可以认为说他是一个请求开始的固定的一个标识
+        // 2个字节，所以占据的是0和1的位置
         Bytes.short2bytes(MAGIC, header);
 
         // set request and serialization flag.
+        // 设置一个flag标识，这条数据，到底是请求还是响应，或者是别的，1个字节
+
+        // 在这里，用一个字节，就可以表示出来3重含义
         header[2] = (byte) (FLAG_REQUEST | serialization.getContentTypeId());
+        // 一个字节，进行或运算的操作，就可以在一个固定的字节的二进制的数据里，把你的flag_request这样的含义，就可以包含在你的二进制数据里
+        // 二进制的位运算
+        // 一个byte是8个bit位，十进制和二进制的换算，如果说你要是懂二进制运算的基本规则
+        // 把他的十进制换算为一个二进制
+        // 通过进行二进制的或运算，在一个字节里，8个bit位，就可以反映出来多种信息在里面
 
         if (req.isTwoWay()) {
-            header[2] |= FLAG_TWOWAY;
+            header[2] |= FLAG_TWOWAY; // 通过运算，就可以表达出来你这里这个请求的类型是two way
         }
         if (req.isEvent()) {
             header[2] |= FLAG_EVENT;
         }
 
         // set request id.
+        // 把请求id写到header里去，long型，8个字节
+        // byte是1个字节，short是2个字节，int是4个字节，long是8个字节
         Bytes.long2bytes(req.getId(), header, 4);
 
         // encode request data.
-        int savedWriteIndex = buffer.writerIndex();
-        buffer.writerIndex(savedWriteIndex + HEADER_LENGTH);
+        int savedWriteIndex = buffer.writerIndex(); // 不管是header头数据，还是rpc invocation body体数据，都是要写入buffer
+        buffer.writerIndex(savedWriteIndex + HEADER_LENGTH); // 做一个设置，是从16个字节开始往后去写，写rpc invocation body体数据写到buffer里去
         ChannelBufferOutputStream bos = new ChannelBufferOutputStream(buffer);
 
         if (req.isHeartbeat()) {
             // heartbeat request data is always null
             bos.write(CodecSupport.getNullBytesOf(serialization));
         } else {
+            // 并没有开始真的去做序列化，只不过hessian2的out流 -> bos -> channel buffer
             ObjectOutput out = serialization.serialize(channel.getUrl(), bos);
             if (req.isEvent()) {
                 encodeEventData(channel, out, req.getData());
             } else {
+                // 需要对request data去进行encode
+                // request.getData，可以获取出来rpc invocation，此时就可以把rpc invocation对象数据
+                // 通过hessian2的out流开始写，在写的过程中，就会把对象数据进行序列化
+                // 序列化以后的数据，此时就会写写到buffer的16个字节往后去写，写这个对象序列化以后的字节数据
+                // 就可以把rpc invocation body体先写到buffer里面去
                 encodeRequestData(channel, out, req.getData(), req.getVersion());
             }
-            out.flushBuffer();
+            out.flushBuffer(); // 到这里为止，buffer里面从16个字节开始，写入的这些数据就是我们的rpc invocation请求调用里面的数据
             if (out instanceof Cleanable) {
                 ((Cleanable) out).cleanup();
             }
@@ -264,14 +303,20 @@ public class ExchangeCodec extends TelnetCodec {
 
         bos.flush();
         bos.close();
-        int len = bos.writtenBytes();
+        int len = bos.writtenBytes(); // 就可以拿到请求体的一个长度
         checkPayload(channel, len);
-        Bytes.int2bytes(len, header, 12);
+        Bytes.int2bytes(len, header, 12); // header，数组里，最后4个字节，是写入我们的body的长度的
+
+        // 吸收dubbo的网络协议的制定的标准
+        // 2个字节魔数、1个字节的标识（通过二进制位运算，可以包含多种信息）、1个字节的空位置、8个字节的请求id、4个字节的body长度
+        // 16个字节就是我们的header
+        // 16个字节往后，就是我们的body，body的长度就是不固定的，他序列化把我们的要调用的接口名称、方法名称、方法参数的一个一个值（序列化后的二进制数据）
+        // 就是按照这个固定的网络协议的规范来读取就可以了
 
         // write
-        buffer.writerIndex(savedWriteIndex);
-        buffer.writeBytes(header); // write header.
-        buffer.writerIndex(savedWriteIndex + HEADER_LENGTH + len);
+        buffer.writerIndex(savedWriteIndex); // 0起始一个位置，重新定位buffer到起始位置
+        buffer.writeBytes(header); // write header. 再把我们的16个字节的数组，写入到里面去
+        buffer.writerIndex(savedWriteIndex + HEADER_LENGTH + len); // index直接定位到header+body写完的位置去
     }
 
     protected void encodeResponse(Channel channel, ChannelBuffer buffer, Response res) throws IOException {
